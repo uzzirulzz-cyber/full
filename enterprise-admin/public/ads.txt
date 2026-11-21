@@ -1,5 +1,0 @@
-# ads.txt — Authorized Digital Sellers for playbeat.digital
-# Managed automatically at build time (scripts/generate-ads-txt.mjs).
-# Build override: ADSENSE_CLIENT_ID; otherwise preserves the committed record.
-# Keep this publisher consistent with the central Business Analytics settings.
-google.com, pub-9777611286139666, DIRECT, f08c47fec0942fa0

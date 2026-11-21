@@ -34,6 +34,30 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   render() {
     if (this.state.hasError) {
+      const isAdmin = window.location.pathname.startsWith('/admin') || window.location.hostname.startsWith('admin.');
+      if (isAdmin) {
+        return (
+          <div className="corona-admin">
+            <div className="d-flex align-items-center text-center error-page bg-info pt-5 pb-4 h-100">
+              <div className="row flex-grow">
+                <div className="col-lg-7 mx-auto text-white">
+                  <div className="row align-items-center d-flex flex-row">
+                    <div className="col-lg-6 text-lg-right pr-lg-4"><h1 className="display-1 mb-0">500</h1></div>
+                    <div className="col-lg-6 error-page-divider text-lg-left pl-lg-4">
+                      <h2>SORRY!</h2>
+                      <h3 className="font-weight-light">The admin module could not be loaded.</h3>
+                    </div>
+                  </div>
+                  <p className="mt-4">{this.state.message}</p>
+                  <div className="row mt-5"><div className="col-12 text-center mt-xl-2">
+                    <button type="button" className="btn btn-outline-light" onClick={() => window.location.assign('/admin#/dashboard')}>Back to dashboard</button>
+                  </div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
       return (
         <div className="min-h-screen flex items-center justify-center p-6">
           <div className="edge-solid rounded-2xl p-6 max-w-md w-full text-center space-y-3">

@@ -1,26 +1,17 @@
 import {
   Activity,
-  ArrowLeft,
-  Briefcase,
-  Database,
   Eye,
   EyeOff,
   Globe,
   Inbox,
-  KeyRound,
-  LayoutDashboard,
   Layers,
-  LockKeyhole,
   PhoneCall,
   Plus,
-  Radio,
-  RefreshCw,
-  Shield,
   ShoppingBag,
   Trash2,
   Tv,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   BusinessService,
   ElectronicFirstSyncResult,
@@ -43,10 +34,13 @@ import { IntegrationsView, type WebhookLogEntry } from './IntegrationsView';
 import { IzokoCrmView } from './IzokoCrmView';
 import { OrdersView } from './OrdersView';
 import { PlaybeatLivePanel } from './PlaybeatLivePanel';
-import '../admin/vendor-stack.css';
-import '../admin/themes.css';
-import '../admin-theme.css';
-import '../admin/layout-fixes.css';
+import { CoronaDashboard } from './admin-corona/CoronaDashboard';
+import { CoronaNavbar } from './admin-corona/CoronaNavbar';
+import { CoronaSidebar } from './admin-corona/CoronaSidebar';
+import { CoronaPageHeader } from './admin-corona/CoronaPageHeader';
+import { adminTabFromLocation, routeForAdminTab } from './admin-corona/routes';
+import '../admin-corona/corona.css';
+import '../admin-corona/integration.css';
 
 export type AdminTab = 'overview' | 'live' | 'extraction' | 'sections' | 'orders' | 'crm' | 'crm-platform' | 'diagnostics';
 type SectionManagerTab = 'section1' | 'section2' | 'section3-channels' | 'section3-plans';
@@ -90,10 +84,25 @@ export function AdminPanelView({
   onBackToStorefront,
   onShowToast,
 }: AdminPanelViewProps) {
-  const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<AdminTab>(() => adminTabFromLocation(initialTab));
   const [sectionSubTab, setSectionSubTab] = useState<SectionManagerTab>('section1');
   const [saving, setSaving] = useState(false);
   const [visibleAdminProducts, setVisibleAdminProducts] = useState(100);
+  const [adminSearch, setAdminSearch] = useState('');
+
+  const navigateAdmin = (tab: AdminTab) => {
+    setActiveTab(tab);
+    const route = routeForAdminTab(tab);
+    if (window.location.hash !== `#${route.path}`) {
+      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}#${route.path}`);
+    }
+  };
+
+  useEffect(() => {
+    const onRouteChange = () => setActiveTab(adminTabFromLocation(initialTab));
+    window.addEventListener('hashchange', onRouteChange);
+    return () => window.removeEventListener('hashchange', onRouteChange);
+  }, [initialTab]);
 
   const handleLockAdmin = async () => {
     await adminLogout();
@@ -149,10 +158,6 @@ export function AdminPanelView({
   const [newPlanUsd, setNewPlanUsd] = useState('29.99');
   const [newPlanConns, setNewPlanConns] = useState('2');
   const [newPlanFeatures, setNewPlanFeatures] = useState('18,000+ Live Channels\n4K UHD Sports & Movies\nInstant Activation');
-
-  const totalRevenuePkr = orders
-    .filter((o) => o.status === 'PAID_FULFILLED')
-    .reduce((sum, o) => sum + o.totalPkr, 0);
 
   const toggleProductPublish = async (p: Product) => {
     try {
@@ -389,266 +394,50 @@ export function AdminPanelView({
     }
   };
 
-  const adminTabs: Array<{ id: AdminTab; label: string; icon: typeof LayoutDashboard; count?: number }> = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'live', label: 'PlayBeat.live', icon: Radio },
-    { id: 'extraction', label: 'Worldwide Extraction & Sync', icon: Globe, count: digitalProducts.length },
-    {
-      id: 'sections',
-      label: 'All 3 Sections & Products',
-      icon: Layers,
-      count: digitalProducts.length + businessServices.length + liveTvChannels.length + liveTvPlans.length,
-    },
-    {
-      id: 'orders',
-      label: 'Orders & Inquiries',
-      icon: ShoppingBag,
-      count: orders.length + serviceInquiries.length,
-    },
-    {
-      id: 'crm',
-      label: 'Izoko CRM & Catalog',
-      icon: Inbox,
-      count: serviceInquiries.filter((i) => i.status === 'NEW' || i.status === 'CONTACTED').length,
-    },
-    {
-      id: 'crm-platform',
-      label: 'CRM Platform',
-      icon: PhoneCall,
-    },
-    { id: 'diagnostics', label: 'Gateway Diagnostics', icon: Activity },
-  ];
-
   return (
-    <div data-pb-theme="midnight-navy" data-pb-mode="dark" className="pbadmin pa-ambient min-h-screen font-sans text-zinc-100 antialiased">
-      <div className="pa-grid-overlay" aria-hidden="true" />
-      <div className="pa-shell flex min-h-screen">
-        <aside className="pa-sidebar sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto p-4 xl:flex">
-          <div className="flex items-center gap-3 border-b border-white/10 px-2 pb-5">
-            <img src="/assets/playbeat/logo-header.webp" alt="Playbeat Digital" className="h-9 w-auto object-contain" />
-            <div>
-              <p className="text-sm font-extrabold text-white">Commerce OS</p>
-              <p className="text-[9px] font-mono uppercase tracking-[0.16em] text-white/50">Unified administration</p>
-            </div>
-          </div>
+    <div className="corona-admin container-scroller">
+      <CoronaSidebar
+        activeTab={activeTab}
+        onNavigate={navigateAdmin}
+        onBackToStorefront={onBackToStorefront}
+        onLock={() => void handleLockAdmin()}
+      />
+      <div className="container-fluid page-body-wrapper">
+        <CoronaNavbar
+          isSyncing={isSyncing}
+          search={adminSearch}
+          inquiries={serviceInquiries}
+          orders={orders}
+          onSearchChange={setAdminSearch}
+          onNavigate={navigateAdmin}
+          onSync={() => void onSyncElectronicFirst()}
+          onBackToStorefront={onBackToStorefront}
+          onLock={() => void handleLockAdmin()}
+        />
+        <div className="main-panel">
+          <main className="content-wrapper">
+            {activeTab !== 'overview' && <CoronaPageHeader activeTab={activeTab} />}
 
-          <nav className="mt-6 space-y-1.5" aria-label="Admin workspace">
-            <p className="mb-2 px-3 text-[9px] font-bold uppercase tracking-[0.18em] text-white/45">Main workspace</p>
-            {adminTabs.map((tab) => {
-              const Icon = tab.icon;
-              const active = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  aria-current={active ? 'page' : undefined}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left text-xs ${active ? 'pa-nav-item--active' : 'pa-nav-item'}`}
-                >
-                  <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate">{tab.label}</span>
-                  {tab.count !== undefined && (
-                    <span className="rounded-full bg-white/10 px-2 py-0.5 font-mono text-[9px] text-white/75">
-                      {tab.count.toLocaleString()}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-
-          <div className="pa-well mt-auto rounded-xl p-3.5">
-            <p className="flex items-center gap-2 text-[11px] font-bold text-white">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_9px_#34d399]" />
-              Storefront connected
-            </p>
-            <p className="mt-1.5 text-[10px] leading-relaxed text-white/55">Live catalog APIs · Authenticated 12-hour session</p>
-          </div>
-        </aside>
-
-        <div className="pa-content min-w-0 flex-1">
-          <header className="pa-topbar sticky top-0 z-30 px-4 py-4 sm:px-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.18em] text-[#ffd958]">
-                  <Shield className="h-3.5 w-3.5" aria-hidden="true" />
-                  Playbeat Digital · Confidential admin
-                </div>
-                <h1 className="mt-1 text-xl font-extrabold tracking-tight text-white sm:text-2xl">Admin Control Center</h1>
-                <p className="mt-1 hidden text-[11px] text-zinc-400 sm:block">Catalog, services, orders, CRM and storefront operations in one workspace.</p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  disabled={isSyncing}
-                  onClick={() => void onSyncElectronicFirst()}
-                  className="pa-btn-gold inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg px-3.5 text-[11px] disabled:opacity-60"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} aria-hidden="true" />
-                  Sync worldwide
-                </button>
-                <button
-                  type="button"
-                  onClick={onBackToStorefront}
-                  className="pa-iconbtn inline-flex h-9 cursor-pointer items-center gap-1.5 px-3 text-[11px] font-bold"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-                  Storefront
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleLockAdmin()}
-                  className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-rose-400/30 bg-rose-500/10 px-3 text-[11px] font-bold text-rose-200 transition-colors hover:bg-rose-500/20"
-                >
-                  <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" />
-                  Lock admin
-                </button>
-              </div>
-            </div>
-          </header>
-
-          <main className="pa-main mx-auto max-w-[1500px] space-y-5 p-4 sm:p-6">
-            <nav className="pa-card flex gap-1 overflow-x-auto rounded-xl p-1.5 xl:hidden" aria-label="Admin workspace" role="tablist">
-              {adminTabs.map((tab) => {
-                const Icon = tab.icon;
-                const active = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-[11px] font-bold ${
-                      active ? 'bg-[#1c365d] text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'
-                    }`}
-                  >
-                    <Icon className="h-3.5 w-3.5 text-[#ffd958]" aria-hidden="true" />
-                    {tab.label}
-                    {tab.count !== undefined && <span className="font-mono text-[9px] opacity-75">({tab.count.toLocaleString()})</span>}
-                  </button>
-                );
-              })}
-            </nav>
-
-      {/* ══════════════ TAB 1: OVERVIEW ══════════════ */}
       {activeTab === 'overview' && (
-        <div className="space-y-5">
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="edge rounded-2xl p-5">
-              <div className="flex items-center justify-between text-xs font-bold text-[#1ea0ff]">
-                <span>SECTION 1 · DIGITAL STORE</span>
-                <KeyRound className="w-4 h-4 text-[#ffd958]" />
-              </div>
-              <p className="text-3xl font-extrabold font-mono text-[#f2f6ff] mt-2">
-                {digitalProducts.filter((p) => p.published !== false).length}
-                <span className="text-sm text-[#9eb2db]"> / {digitalProducts.length}</span>
-              </p>
-              <p className="text-[11px] text-[#c8d3ea] mt-1">
-                ElectronicFirst Worldwide affiliate SKUs live
-              </p>
-            </div>
-
-            <div className="edge rounded-2xl p-5">
-              <div className="flex items-center justify-between text-xs font-bold text-[#1ea0ff]">
-                <span>SECTION 2 · SERVICES</span>
-                <Briefcase className="w-4 h-4 text-[#ffd958]" />
-              </div>
-              <p className="text-3xl font-extrabold font-mono text-[#f2f6ff] mt-2">
-                {businessServices.filter((s) => s.published).length}
-                <span className="text-sm text-[#9eb2db]"> / {businessServices.length}</span>
-              </p>
-              <p className="text-[11px] text-[#c8d3ea] mt-1">
-                playbeat.digital/services packages active
-              </p>
-            </div>
-
-            <div className="edge rounded-2xl p-5">
-              <div className="flex items-center justify-between text-xs font-bold text-[#1ea0ff]">
-                <span>SECTION 3 · LIVE TV</span>
-                <Tv className="w-4 h-4 text-[#ffd958]" />
-              </div>
-              <p className="text-3xl font-extrabold font-mono text-[#f2f6ff] mt-2">
-                {liveTvChannels.filter((c) => c.published).length} CH ·{' '}
-                {liveTvPlans.filter((pl) => pl.published).length} Plans
-              </p>
-              <p className="text-[11px] text-[#c8d3ea] mt-1">
-                Public FTA directory + Xtream/ActiveCode passes
-              </p>
-            </div>
-
-            <div className="edge rounded-2xl p-5">
-              <div className="flex items-center justify-between text-xs font-bold text-[#1ea0ff]">
-                <span>ORDERS &amp; PROPOSALS</span>
-                <Database className="w-4 h-4 text-[#ffd958]" />
-              </div>
-              <p className="text-2xl font-extrabold font-mono text-[#ffd958] mt-2">
-                ₨{totalRevenuePkr.toLocaleString()}
-              </p>
-              <p className="text-[11px] text-[#c8d3ea] mt-1">
-                {orders.length} Orders · {serviceInquiries.length} Service Inquiries
-              </p>
-            </div>
-          </div>
-
-          <PlaybeatLivePanel
-            compact
-            onNavigate={(destination) => {
-              if (destination === 'iptv') setActiveTab('live');
-              if (destination === 'business') setActiveTab('diagnostics');
-            }}
+        <div className="corona-overview">
+          <CoronaDashboard
+            digitalProducts={digitalProducts}
+            businessServices={businessServices}
+            liveTvChannels={liveTvChannels}
+            liveTvPlans={liveTvPlans}
+            orders={orders}
+            serviceInquiries={serviceInquiries}
+            onNavigate={navigateAdmin}
           />
-
-          <div className="grid md:grid-cols-3 gap-4">
-            <div className="edge rounded-2xl p-5 space-y-2.5">
-              <h3 className="font-extrabold text-sm text-[#f2f6ff]">
-                Section 1 · Affiliate Privacy Shield
-              </h3>
-              <p className="text-xs text-[#c8d3ea] leading-relaxed">
-                Buyer API <code className="text-[#ffd958]">/api/storefront/catalog</code> automatically strips supplier URLs and exposes Playbeat Public IDs (<code className="text-[#1ea0ff]">PB-DIG-xxx</code>). Full ElectronicFirst Worldwide URLs &amp; exports remain strictly inside Admin.
-              </p>
-              <button
-                type="button"
-                onClick={() => setActiveTab('extraction')}
-                className="yb rounded-full px-4 h-8 text-xs font-bold"
-              >
-                Open Extraction Table →
-              </button>
-            </div>
-
-            <div className="edge rounded-2xl p-5 space-y-2.5">
-              <h3 className="font-extrabold text-sm text-[#f2f6ff]">
-                Section 2 &amp; 3 · Unified Catalog CMS
-              </h3>
-              <p className="text-xs text-[#c8d3ea] leading-relaxed">
-                Add new digital products, enterprise business service packages, LIVE TV channels, or Xtream/ActiveCode streaming plans and publish instantly to the buyer storefront.
-              </p>
-              <button
-                type="button"
-                onClick={() => setActiveTab('sections')}
-                className="yb rounded-full px-4 h-8 text-xs font-bold"
-              >
-                Manage All 3 Sections →
-              </button>
-            </div>
-
-            <div className="edge rounded-2xl p-5 space-y-2.5">
-              <h3 className="font-extrabold text-sm text-[#f2f6ff]">
-                Multi-Rail Fulfillment &amp; Gateways
-              </h3>
-              <p className="text-xs text-[#c8d3ea] leading-relaxed">
-                Rapid Gateway PKR (Merchant #{readiness?.rapidGateway.merchantId || '1367'}), PayPal REST v2 ({readiness?.paypal.environment || 'sandbox'}), Manual Bank/Crypto, and ElectronicFirst Partner API v1.
-              </p>
-              <button
-                type="button"
-                onClick={() => setActiveTab('diagnostics')}
-                className="yb rounded-full px-4 h-8 text-xs font-bold"
-              >
-                Run Gateway Diagnostics →
-              </button>
-            </div>
-          </div>
+          <div className="row"><div className="col-12">
+            <PlaybeatLivePanel
+              compact
+              onNavigate={(destination) => {
+                if (destination === 'iptv') navigateAdmin('live');
+                if (destination === 'business') navigateAdmin('diagnostics');
+              }}
+            />
+          </div></div>
         </div>
       )}
 
@@ -656,6 +445,7 @@ export function AdminPanelView({
       {activeTab === 'extraction' && (
         <CatalogTableView
           products={digitalProducts}
+          externalSearch={adminSearch}
           syncStatus={syncStatus}
           isSyncing={isSyncing}
           onSyncApi={() => void onSyncElectronicFirst()}
@@ -692,7 +482,7 @@ export function AdminPanelView({
           {/* SECTION 1 MANAGER */}
           {sectionSubTab === 'section1' && (
             <div className="space-y-4">
-              <form onSubmit={handleAddProduct} className="edge rounded-2xl p-5 space-y-3">
+              <form onSubmit={handleAddProduct} className="card forms-sample space-y-3">
                 <h3 className="text-sm font-extrabold text-[#ffd958] flex items-center gap-1.5">
                   <Plus className="w-4 h-4" />
                   Add New Section 1 Digital Product (Affiliate / Playbeat Store)
@@ -761,7 +551,7 @@ export function AdminPanelView({
 
               <div className="edge rounded-2xl overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
+                  <table className="table table-hover w-full text-left text-xs">
                     <thead className="bg-[#040d29] border-b border-[#2154d4] text-[10.5px] uppercase text-[#c8d3ea]">
                       <tr>
                         <th className="py-3 px-4">Product &amp; Public Code</th>
@@ -829,7 +619,7 @@ export function AdminPanelView({
           {/* SECTION 2 MANAGER */}
           {sectionSubTab === 'section2' && (
             <div className="space-y-4">
-              <form onSubmit={handleAddService} className="edge rounded-2xl p-5 space-y-3">
+              <form onSubmit={handleAddService} className="card forms-sample space-y-3">
                 <h3 className="text-sm font-extrabold text-[#ffd958] flex items-center gap-1.5">
                   <Plus className="w-4 h-4" />
                   Add New Section 2 Business Service (playbeat.digital/services)
@@ -916,7 +706,7 @@ export function AdminPanelView({
 
               <div className="edge rounded-2xl overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
+                  <table className="table table-hover w-full text-left text-xs">
                     <thead className="bg-[#040d29] border-b border-[#2154d4] text-[10.5px] uppercase text-[#c8d3ea]">
                       <tr>
                         <th className="py-3 px-4">Service Name &amp; SKU</th>
@@ -972,7 +762,7 @@ export function AdminPanelView({
           {/* SECTION 3 CHANNELS MANAGER */}
           {sectionSubTab === 'section3-channels' && (
             <div className="space-y-4">
-              <form onSubmit={handleAddChannel} className="edge rounded-2xl p-5 space-y-3">
+              <form onSubmit={handleAddChannel} className="card forms-sample space-y-3">
                 <h3 className="text-sm font-extrabold text-[#ffd958] flex items-center gap-1.5">
                   <Plus className="w-4 h-4" />
                   Add New Section 3 LIVE TV Channel
@@ -1037,7 +827,7 @@ export function AdminPanelView({
 
               <div className="edge rounded-2xl overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
+                  <table className="table table-hover w-full text-left text-xs">
                     <thead className="bg-[#040d29] border-b border-[#2154d4] text-[10.5px] uppercase text-[#c8d3ea]">
                       <tr>
                         <th className="py-3 px-4">Channel</th>
@@ -1088,7 +878,7 @@ export function AdminPanelView({
           {/* SECTION 3 LIVE TV PLANS MANAGER */}
           {sectionSubTab === 'section3-plans' && (
             <div className="space-y-4">
-              <form onSubmit={handleAddPlan} className="edge rounded-2xl p-5 space-y-3">
+              <form onSubmit={handleAddPlan} className="card forms-sample space-y-3">
                 <h3 className="text-sm font-extrabold text-[#ffd958] flex items-center gap-1.5">
                   <Plus className="w-4 h-4" />
                   Add New Playbeat LIVE TV Streaming Pass
@@ -1192,7 +982,7 @@ export function AdminPanelView({
       {activeTab === 'orders' && (
         <div className="space-y-6">
           {/* Service Proposal Inquiries */}
-          <section className="edge rounded-2xl p-5 space-y-3">
+          <section className="card forms-sample space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-extrabold text-[#f2f6ff] flex items-center gap-2">
                 <Inbox className="w-4 h-4 text-[#ffd958]" />
@@ -1274,8 +1064,8 @@ export function AdminPanelView({
       {activeTab === 'live' && (
         <PlaybeatLivePanel
           onNavigate={(destination) => {
-            if (destination === 'iptv') setActiveTab('live');
-            if (destination === 'business') setActiveTab('diagnostics');
+            if (destination === 'iptv') navigateAdmin('live');
+            if (destination === 'business') navigateAdmin('diagnostics');
           }}
         />
       )}
@@ -1293,6 +1083,14 @@ export function AdminPanelView({
         </div>
       )}
           </main>
+          <footer className="footer">
+            <div className="container-fluid">
+              <div className="d-sm-flex justify-content-center justify-content-sm-between py-2 w-100">
+                <span className="text-muted text-center text-sm-left d-block d-sm-inline-block">© {new Date().getFullYear()} Playbeat Digital · Connected storefront administration</span>
+                <span className="float-none float-sm-right d-block mt-1 mt-sm-0 text-center">Corona Bootstrap UI by BootstrapDash</span>
+              </div>
+            </div>
+          </footer>
         </div>
       </div>
     </div>

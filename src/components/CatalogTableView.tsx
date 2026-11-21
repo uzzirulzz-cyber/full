@@ -14,6 +14,7 @@ import type { ElectronicFirstSyncResult, Product } from '../types/store';
 
 interface CatalogTableViewProps {
   products: Product[];
+  externalSearch?: string;
   syncStatus: ElectronicFirstSyncResult | null;
   isSyncing: boolean;
   onSyncApi: () => void;
@@ -25,6 +26,7 @@ type SortKey = 'name' | 'priceUsd' | 'discountPercent' | 'stockCount';
 
 export function CatalogTableView({
   products,
+  externalSearch,
   syncStatus,
   isSyncing,
   onSyncApi,
@@ -37,6 +39,10 @@ export function CatalogTableView({
   const [sortKey, setSortKey] = useState<SortKey>('discountPercent');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [visibleCount, setVisibleCount] = useState(100);
+
+  useEffect(() => {
+    if (externalSearch !== undefined) setSearch(externalSearch);
+  }, [externalSearch]);
 
   useEffect(() => {
     setVisibleCount(100);
@@ -262,7 +268,7 @@ export function CatalogTableView({
       {/* Admin Structured Extraction Table */}
       <div className="edge rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="table table-hover w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-[#040d29] border-b border-[#2154d4] text-[11px] uppercase tracking-wider text-[#c8d3ea]">
                 <th className="py-3.5 px-4">
