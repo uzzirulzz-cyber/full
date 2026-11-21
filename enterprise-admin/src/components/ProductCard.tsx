@@ -1,0 +1,312 @@
+import React, { useState } from 'react'
+import {
+  Star,
+  Heart,
+  ShoppingCart,
+  Check,
+  Zap,
+  Truck,
+  ChevronDown,
+} from 'lucide-react'
+import { Product, CurrencyCode, ProductVariant } from '../types'
+import { formatPrice } from '../lib/currency'
+import { ensureProductSlug } from '../lib/slug'
+
+// Category chip colors + per-category hover glow borders (color-coded storefront)
+// NOTE: glow strings are FULL static class names so Tailwind's JIT scanner sees them.
+const CAT_CHIP: Record<string, string> = {
+  Streaming: 'bg-rose-500/20 text-rose-300 border-rose-400/30',
+  Subscriptions: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30',
+  'Gift Cards': 'bg-amber-500/20 text-amber-300 border-amber-400/30',
+  Gaming: 'bg-indigo-500/20 text-indigo-300 border-indigo-400/30',
+  Software: 'bg-purple-500/20 text-purple-300 border-purple-400/30',
+  'Smart Projectors': 'bg-cyan-500/20 text-cyan-300 border-cyan-400/30',
+}
+
+// Electric-blue hover halo used by every card (design PDF: glowing blue borders)
+const BLUE_GLOW =
+  'group-hover:border-blue-400/60 group-hover:shadow-[0_18px_44px_rgba(0,0,0,0.6),0_0_26px_-4px_rgba(59,130,246,0.5)]'
+
+// Per-category card glow on hover — uniform electric-blue halo per the design PDF
+// (kept as a map so the lookup contract is unchanged)
+const CAT_GLOW: Record<string, string> = {
+  Streaming: BLUE_GLOW,
+  Subscriptions: BLUE_GLOW,
+  'Gift Cards': BLUE_GLOW,
+  Gaming: BLUE_GLOW,
+  Software: BLUE_GLOW,
+  'Smart Projectors': BLUE_GLOW,
+}
+const DEFAULT_GLOW = BLUE_GLOW
+
+interface ProductCardProps {
+  product: Product
+  currency: CurrencyCode
+  onAddToCart: (product: Product, variant?: ProductVariant) => void
+  onQuickView: (product: Product) => void
+  onToggleWishlist: (product: Product) => void
+  isWishlisted: boolean
+  onInstantBuy: (product: Product, variant?: ProductVariant) => void
+}
+
+export const ProductCard: React.FC<ProductCardProps> = ({
+  product,
+  currency,
+  onAddToCart,
+  onQuickView,
+  onToggleWishlist,
+  isWishlisted,
+  onInstantBuy,
+}) => {
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(
+    product.variants && product.variants.length > 0 ? product.variants[0] : undefined
+  )
+  const [addedAnimation, setAddedAnimation] = useState(false)
+  const [variantMenuOpen, setVariantMenuOpen] = useState(false)
+  const hasVariants = product.variants && product.variants.length > 1
+
+  const currentPrice = selectedVariant ? selectedVariant.price : product.price
+  const originalPrice = selectedVariant?.originalPrice || product.originalPrice
+  const discountPercent = originalPrice
+    ? Math.round(((originalPrice - currentPrice) / originalPrice) * 100)
+    : product.discountPercent
+  const hasReviews = (product.reviewCount || 0) > 0 || (product.rating || 0) > 0
+  const isDigital = product.digital !== false && product.productType !== 'physical'
+  const catChip = CAT_CHIP[product.category] || 'bg-slate-500/20 text-slate-300 border-slate-400/30'
+  const catGlow = CAT_GLOW[product.category] || DEFAULT_GLOW
+
+  const handleAddToCart = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onAddToCart(product, selectedVariant)
+    setAddedAnimation(true)
+    setTimeout(() => setAddedAnimation(false), 1500)
+  }
+
+  const handleWishlist = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onToggleWishlist(product)
+  }
+
+  const handleBuyNow = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onInstantBuy(product, selectedVariant)
+  }
+
+  const handleSelectVariant = (e: React.MouseEvent, v: ProductVariant) => {
+    e.stopPropagation()
+    setSelectedVariant(v)
+    setVariantMenuOpen(false)
+  }
+
+  return (
+    <div className="relative group">
+      {/* Electric-blue lift + halo on hover (design PDF) */}
+      <div className="absolute -inset-0.5 rounded-[24px] bg-gradient-to-b from-blue-500/50 via-sky-400/20 to-transparent opacity-0 group-hover:opacity-100 blur-[6px] transition-all duration-500 pointer-events-none"></div>
+
+      <div
+        id={`product-card-${product.id}`}
+        onClick={() => onQuickView(product)}
+        className={`relative flex flex-col h-full rounded-[22px] bg-gradient-to-b from-[#0C1428] to-[#0A101F] border border-blue-500/25 overflow-hidden transition-all duration-300 cursor-pointer group-hover:-translate-y-1 shadow-[0_0_0_1px_rgba(59,130,246,0.08),0_8px_28px_rgba(0,0,0,0.45)] p-3 ${catGlow}`}
+      >
+        {/* Media */}
+        <div className="relative aspect-[16/10] sm:aspect-[4/3] w-full rounded-2xl overflow-hidden bg-[#060D26]">
+          <div className="relative w-full h-full overflow-hidden">
+            {/* Perf (task §7): card grid renders the ≤600px thumbnail variant
+                when the asset has one — identical artwork, smaller transfer. */}
+            <img
+              src={product.imageThumb || product.image}
+              alt={product.name}
+              loading="lazy"
+              decoding="async"
+              className="w-full h-full object-cover object-center group-hover:scale-[1.06] transition-transform duration-700 ease-out"
+            />
+            {/* Premium scrim */}
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0A101F]/70 via-transparent to-transparent pointer-events-none"></div>
+          </div>
+
+          {/* Discount badge */}
+          <div className="absolute top-2.5 left-2.5 z-20 flex flex-col gap-1.5">
+            {discountPercent && discountPercent > 0 ? (
+              <span className="px-2 py-0.5 rounded-lg text-[10px] font-mono font-extrabold bg-gradient-to-r from-amber-300 to-yellow-500 text-slate-950 shadow-lg">
+                -{discountPercent}%
+              </span>
+            ) : null}
+            {isDigital ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 backdrop-blur-sm">
+                <Zap className="w-2.5 h-2.5 fill-emerald-300" />
+                INSTANT
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 backdrop-blur-sm">
+                <Truck className="w-2.5 h-2.5" />
+                SHIPPED
+              </span>
+            )}
+          </div>
+
+          {/* Wishlist */}
+          <button
+            id={`wishlist-btn-${product.id}`}
+            onClick={handleWishlist}
+            aria-label="Wishlist"
+            className="absolute top-2.5 right-2.5 z-20 p-1.5 rounded-xl bg-black/30 backdrop-blur-sm text-slate-300 hover:text-rose-400 hover:bg-black/50 transition"
+          >
+            <Heart
+              className={`w-4 h-4 ${
+                isWishlisted ? 'fill-rose-500 text-rose-500' : 'text-slate-200 stroke-[1.8]'
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* Details */}
+        <div className="flex-1 flex flex-col pt-3 px-1">
+          {/* Product name is a real, crawlable link to its own slug URL
+              (/product/<slug>) — opens the same quick view in the SPA */}
+          <h3 className="font-bold text-white text-sm leading-snug line-clamp-2 mb-1.5 group-hover:text-amber-200 transition-colors">
+            <a
+              href={`/product/${ensureProductSlug(product)}`}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                onQuickView(product)
+              }}
+              className="hover:text-amber-200"
+            >
+              {product.name}
+            </a>
+          </h3>
+
+          {/* Category chip + rating */}
+          <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+            <span
+              className={`px-1.5 py-0.5 rounded-md text-[9px] font-mono font-bold border ${catChip}`}
+            >
+              {product.category}
+            </span>
+            {hasReviews && (
+              <span className="inline-flex items-center gap-1 text-xs">
+                <Star className="w-3 h-3 fill-[#FFC107] text-[#FFC107]" />
+                <span className="font-bold text-white">{product.rating}</span>
+              </span>
+            )}
+          </div>
+
+          {/* Variant Dropdown Selector — only shown when product has multiple variants */}
+          {hasVariants && (
+            <div className="relative mb-2" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setVariantMenuOpen(!variantMenuOpen) }}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#0B1536] border border-amber-400/30 hover:border-amber-400/60 text-xs text-white font-mono transition"
+              >
+                <span className="truncate text-left flex items-center gap-1.5">
+                  <span className="text-[10px] text-amber-400 uppercase tracking-wider">{product.variantLabel || 'Option'}:</span>
+                  <span className="text-white font-semibold">{selectedVariant?.name || 'Select option'}</span>
+                </span>
+                <ChevronDown className={`w-3.5 h-3.5 text-amber-400 transition-transform shrink-0 ${variantMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {variantMenuOpen && (
+                <>
+                  {/* Click-away overlay */}
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={(e) => { e.stopPropagation(); setVariantMenuOpen(false) }}
+                  />
+                  <div className="absolute left-0 right-0 mt-1 z-20 max-h-56 overflow-y-auto rounded-xl bg-[#0B1536] border border-amber-400/40 shadow-2xl shadow-black/60 py-1 backdrop-blur-xl">
+                    {product.variants!.map((v) => {
+                      const isActive = selectedVariant?.id === v.id
+                      const vDiscount = v.originalPrice && v.originalPrice > v.price
+                        ? Math.round(((v.originalPrice - v.price) / v.originalPrice) * 100)
+                        : 0
+                      return (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={(e) => handleSelectVariant(e, v)}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-left transition ${
+                            isActive
+                              ? 'bg-amber-400/15 text-amber-300'
+                              : 'text-slate-200 hover:bg-white/5'
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-semibold truncate">{v.name}</div>
+                            <div className="flex items-baseline gap-1.5 mt-0.5">
+                              <span className="text-[11px] font-mono font-bold text-white">
+                                {formatPrice(v.price, currency)}
+                              </span>
+                              {v.originalPrice && v.originalPrice > v.price && (
+                                <span className="text-[10px] text-slate-500 line-through font-mono">
+                                  {formatPrice(v.originalPrice, currency)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {vDiscount > 0 && (
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                -{vDiscount}%
+                              </span>
+                            )}
+                            {v.badge && (
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                {v.badge}
+                              </span>
+                            )}
+                            {isActive && <Check className="w-3.5 h-3.5 text-amber-400" />}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Price */}
+          <div className="mt-auto pt-2 flex items-baseline gap-2 mb-3">
+            {originalPrice && originalPrice > currentPrice && (
+              <span className="text-xs text-slate-500 line-through font-mono">
+                {formatPrice(originalPrice, currency)}
+              </span>
+            )}
+            <span className="font-extrabold text-base sm:text-lg text-white font-mono tracking-tight">
+              {formatPrice(currentPrice, currency)}
+            </span>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+            <button
+              id={`buy-now-btn-${product.id}`}
+              onClick={handleBuyNow}
+              className="flex-1 py-2 rounded-xl btn-gold-gradient text-slate-950 font-bold text-xs sm:text-sm shadow-md active:scale-95 transition-all text-center"
+            >
+              Buy Now
+            </button>
+
+            <button
+              id={`add-cart-btn-${product.id}`}
+              onClick={handleAddToCart}
+              className={`p-2 rounded-xl border transition-all active:scale-95 flex items-center justify-center shrink-0 ${
+                addedAnimation
+                  ? 'bg-emerald-400 text-slate-950 border-emerald-400'
+                  : 'bg-white/[0.04] border-amber-400/30 text-amber-300 hover:border-amber-300 hover:bg-amber-400/10'
+              }`}
+              title="Add to cart"
+            >
+              {addedAnimation ? (
+                <Check className="w-4 h-4 stroke-[3]" />
+              ) : (
+                <ShoppingCart className="w-4 h-4 stroke-[2]" />
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

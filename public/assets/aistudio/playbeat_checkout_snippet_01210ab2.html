@@ -1,0 +1,247 @@
+
+<!-- ══════════════ CHECKOUT MODAL (PayPal · Rapid Gateway · Manual) ══════════════ -->
+<style>
+.co-tabs{display:flex;gap:8px;margin:16px 0 14px}
+.co-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 6px;border-radius:10px;border:1px solid #2154d4;background:#0a1d5566;color:#f2f6ff;font-size:12.5px;font-weight:700;cursor:pointer;transition:.15s;font-family:inherit}
+.co-tab small{font-size:10.5px;font-weight:500;color:#c8d3ea}
+.co-tab:hover{border-color:#2f8bff}
+.co-tab.active{border-color:#2f8bff;background:#0b2a8a88;box-shadow:inset 0 0 0 1px #2f8bff}
+.co-hint{font-size:13px;color:#c8d3ea;margin:10px 0;line-height:1.6}
+.co-error{font-size:13px;color:#ff6b6b;padding:12px 0}
+.co-secure{font-size:12px;color:#c8d3ea;margin-top:12px;text-align:center}
+.co-wallet{margin:12px 0;min-height:44px}
+.co-loading{padding:28px;text-align:center;color:#c8d3ea}
+.co-input{width:100%;background:#06123688;border:1px solid #2154d4;color:#f2f6ff;padding:11px 14px;border-radius:10px;font-size:14px;outline:none;font-family:inherit}
+.co-input:focus{border-color:#2f8bff}
+.co-row{display:flex;gap:8px;margin:12px 0}
+.co-row .co-input{flex:1}
+.co-sum{border-top:1px solid #2154d4;margin-top:12px;padding-top:12px}
+.co-line{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;color:#c8d3ea}
+.co-line b{color:#f2f6ff}
+.co-total{display:flex;justify-content:space-between;font-weight:800;font-size:15px;padding-top:8px;margin-top:6px;border-top:1px solid #2154d4}
+.co-ref{text-align:center;background:#06123688;border:1px dashed #2154d4;border-radius:10px;padding:10px;margin:12px 0;font-size:13px;color:#c8d3ea}
+.co-ref b{color:#ffd958;font-family:monospace}
+.co-ok{text-align:center;padding:10px 0}
+.co-ok .big{font-size:52px;margin-bottom:6px}
+@media (max-width:480px){.co-tabs{flex-direction:column}.co-row{flex-direction:column}}
+</style>
+<div id="pbChk" class="fixed inset-0 z-[70]" style="display:none">
+  <div class="absolute inset-0 bg-black/70" data-chk-close></div>
+  <div class="edge rounded-2xl absolute left-1/2 top-1/2 w-[min(480px,calc(100%-24px))] max-h-[92vh] overflow-y-auto p-5"
+       style="transform:translate(-50%,-50%)" role="dialog" aria-modal="true" aria-label="Secure checkout">
+    <button id="chkX" type="button" aria-label="Close checkout" class="absolute top-3 right-3 text-2xl leading-none px-2">&times;</button>
+    <div id="chkBody"></div>
+  </div>
+</div>
+<script>
+(function(){
+var PB={order:null,config:null,backendUp:false,_rp:false};
+var PRICE={};
+Array.prototype.forEach.call(document.querySelectorAll('[data-buy]'),function(b){PRICE[b.dataset.buy]=parseFloat(b.dataset.price||'0')});
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}
+function items(){try{return JSON.parse(localStorage.getItem('pb_cart')||'[]')}catch(e){return[]}}
+function toastEl(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(function(){t.classList.remove('show')},2500)}
+
+var modal=document.getElementById('pbChk'),body=document.getElementById('chkBody');
+function close(){modal.style.display='none'}
+document.getElementById('chkX').addEventListener('click',close);
+modal.querySelector('[data-chk-close]').addEventListener('click',close);
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&modal.style.display!=='none')close()});
+
+// Replace the stub checkout button (its old listener only shows a toast)
+var co=document.getElementById('co'),co2=co.cloneNode(true);
+co.parentNode.replaceChild(co2,co);
+co2.addEventListener('click',open);
+
+async function open(){
+  var cart=items();
+  if(!cart.length){toastEl('Your cart is empty');return}
+  document.getElementById('cartX').click();          // close the cart drawer
+  modal.style.display='block';
+  body.innerHTML='<div class="co-loading">⏳ Preparing secure checkout…</div>';
+
+  var snapshot=cart.map(function(i){return{id:i.n,name:i.n,qty:i.q,price:PRICE[i.n]||0}});
+  var totalUSD=snapshot.reduce(function(s,i){return s+i.price*i.qty},0);
+  if(totalUSD<=0){body.innerHTML='<div class="co-loading">⚠ Prices unavailable for these items.</div>';return}
+
+  try{
+    var r=await fetch('/api/config');
+    if(!r.ok)throw 0;
+    PB.config=await r.json();PB.backendUp=true;
+  }catch(e){
+    PB.backendUp=false;
+    PB.config={pkrPerUsd:280,storeName:'Playbeat Digital',paypal:{enabled:false},rapid:{enabled:false}};
+  }
+
+  if(PB.backendUp){
+    try{
+      var r2=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:snapshot})});
+      if(!r2.ok)throw new Error((await r2.json()).error||'order failed');
+      PB.order=await r2.json();
+    }catch(err){body.innerHTML='<div class="co-loading">⚠ Could not create the order: '+esc(err.message)+'</div>';return}
+  }else{
+    PB.order={ref:'PB-'+Date.now().toString(36).toUpperCase(),totalUSD:+totalUSD.toFixed(2),
+      totalPKR:Math.round(totalUSD*PB.config.pkrPerUsd*100)/100};
+  }
+  mirror('PENDING');
+  render(snapshot);
+}
+
+function render(snapshot){
+  var c=PB.config,o=PB.order,tabs=[];
+  if(c.paypal.enabled)tabs.push({id:'paypal',label:'💳 Card / PayPal',sub:'International · USD'});
+  if(c.rapid.enabled)tabs.push({id:'rapid',label:'📱 JazzCash / EasyPaisa',sub:'Pakistan · PKR'});
+  tabs.push({id:'manual',label:'🤝 Manual',sub:'Bank / crypto / other'});
+  body.innerHTML=
+    '<h2 class="text-lg font-extrabold" style="margin:0 0 4px">🧾 Checkout</h2>'+
+    snapshot.map(function(i){return '<div class="co-line"><span>'+esc(i.name)+' ×'+i.qty+'</span><b>$'+(i.price*i.qty).toFixed(2)+'</b></div>'}).join('')+
+    '<div class="co-sum"><div class="co-total"><span>Total</span><span style="color:#ffd958">$'+o.totalUSD.toFixed(2)+
+    ' <small style="color:#c8d3ea;font-weight:500">≈ ₨'+o.totalPKR.toLocaleString()+'</small></span></div></div>'+
+    '<div class="co-ref">Order Reference: <b>'+o.ref+'</b></div>'+
+    '<label style="font-size:12px;color:#c8d3ea;display:block;margin:10px 0 6px">Email for key delivery</label>'+
+    '<input type="email" id="coEmail" class="co-input" placeholder="you@example.com" autocomplete="email">'+
+    '<div class="co-tabs" role="tablist">'+tabs.map(function(t,i){
+      return '<button class="co-tab'+(i?'':' active')+'" data-m="'+t.id+'" role="tab">'+t.label+'<small>'+t.sub+'</small></button>'}).join('')+'</div>'+
+    '<div id="coPane"></div>';
+  Array.prototype.forEach.call(body.querySelectorAll('.co-tab'),function(b){
+    b.addEventListener('click',function(){switchTab(b.dataset.m)})});
+  switchTab(tabs[0].id);
+}
+
+function switchTab(m){
+  Array.prototype.forEach.call(body.querySelectorAll('.co-tab'),function(b){b.classList.toggle('active',b.dataset.m===m)});
+  var pane=document.getElementById('coPane');pane.innerHTML='';PB._rp=false;
+  if(m==='paypal')payPal(pane);else if(m==='rapid')rapid(pane);else manual(pane);
+}
+
+/* ── PayPal (international card, USD) ── */
+async function payPal(pane){
+  pane.innerHTML='<p class="co-hint">Pay securely with your card or PayPal account. Amount: <b>$'+PB.order.totalUSD.toFixed(2)+' USD</b></p>'+
+    '<div id="ppButtons" class="co-wallet"><div class="co-loading">Loading PayPal…</div></div>'+
+    '<p class="co-secure">🔒 Processed by PayPal — Playbeat never sees your card details.</p>';
+  try{
+    await loadPP();
+    document.getElementById('ppButtons').innerHTML='';
+    window.paypal.Buttons({
+      style:{layout:'vertical',color:'gold',shape:'pill',label:'pay'},
+      createOrder:async function(){
+        var r=await fetch('/api/paypal/create-order',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({ref:PB.order.ref,email:(document.getElementById('coEmail')||{}).value||''})});
+        var d=await r.json();if(!r.ok)throw new Error(d.error||'PayPal error');return d.id;
+      },
+      onApprove:async function(data){
+        var r=await fetch('/api/paypal/capture-order',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({orderId:data.orderID,ref:PB.order.ref})});
+        var d=await r.json();
+        if(r.ok&&d.status==='PAID')success('PayPal','$'+PB.order.totalUSD.toFixed(2)+' USD');
+        else fail('Payment could not be confirmed. Reference: '+PB.order.ref);
+      },
+      onError:function(e){console.error('[paypal]',e);toastEl('❌ PayPal checkout failed — try another method')}
+    }).render('#ppButtons');
+  }catch(err){
+    pane.querySelector('.co-wallet').innerHTML='<p class="co-error">⚠ PayPal could not load. '+esc(err.message)+'</p>';
+  }
+}
+function loadPP(){return new Promise(function(res,rej){
+  if(window.paypal&&window.paypal.Buttons)return res();
+  var s=document.createElement('script');
+  s.src='https://www.paypal.com/sdk/js?client-id='+encodeURIComponent(PB.config.paypal.clientId)+'&currency=USD&intent=capture&components=buttons';
+  s.onload=res;s.onerror=function(){rej(new Error('PayPal SDK failed to load (network/ad-blocker)'))};
+  document.head.appendChild(s)})}
+
+/* ── Rapid Gateway (JazzCash / EasyPaisa / bank, PKR) ── */
+function rapid(pane){
+  var o=PB.order;
+  pane.innerHTML='<p class="co-hint">Pay with JazzCash, EasyPaisa, bank transfer or Raast. Amount: <b>₨'+o.totalPKR.toLocaleString()+' PKR</b> <small>($'+o.totalUSD.toFixed(2)+' × '+PB.config.pkrPerUsd+')</small></p>'+
+    '<div class="co-row"><input type="tel" id="coMobile" class="co-input" placeholder="Mobile number (03XXXXXXXXX)" autocomplete="tel">'+
+    '<button class="yb rounded-full px-5 text-[13px] font-bold" id="rpPay" style="white-space:nowrap">Pay ₨'+Math.round(o.totalPKR).toLocaleString()+'</button></div>'+
+    '<div id="rp-checkout" class="co-wallet"></div>'+
+    '<p class="co-secure">🔒 Secure embedded checkout by Rapid Gateway — card, wallet, bank &amp; Raast.</p>';
+  document.getElementById('rpPay').addEventListener('click',startRapid);
+}
+async function startRapid(){
+  var mount=document.getElementById('rp-checkout');
+  if(PB._rp)return;
+  mount.innerHTML='<div class="co-loading">Creating secure session…</div>';
+  try{
+    var r=await fetch('/api/rapid/create-session',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ref:PB.order.ref,
+        customerEmail:(document.getElementById('coEmail')||{}).value||undefined,
+        customerMobile:(document.getElementById('coMobile')||{}).value||undefined})});
+    var d=await r.json();if(!r.ok)throw new Error(d.error||'Session failed');
+    await loadRP();
+    mount.innerHTML='';PB._rp=true;
+    window.RapidPay(d.publishableKey).mountCheckout('#rp-checkout',{
+      clientSecret:d.clientSecret,amount:Math.round(d.amountPKR),currency:'PKR',
+      merchantName:PB.config.storeName,
+      onSuccess:function(x){verify(x.sessionId)},
+      onPending:function(x){paneHint('⏳ Waiting for approval in your wallet app…');verify(x.sessionId)},
+      onError:function(e){console.error('[rapid]',e);mount.innerHTML='<p class="co-error">⚠ Payment failed — please try again.</p>';PB._rp=false}
+    });
+  }catch(err){mount.innerHTML='<p class="co-error">⚠ '+esc(err.message)+'</p>'}
+}
+function paneHint(m){document.getElementById('coPane').insertAdjacentHTML('beforeend','<p class="co-hint">'+m+'</p>')}
+function loadRP(){return new Promise(function(res,rej){
+  if(window.RapidPay)return res();
+  var s=document.createElement('script');s.src='https://secure.rapid-gateway.com/sdk/v1/rapidpay.js';
+  s.onload=res;s.onerror=function(){rej(new Error('RapidPay SDK failed to load'))};document.head.appendChild(s)})}
+async function verify(sid,n){
+  n=n||1;
+  try{
+    var r=await fetch('/api/rapid/session-status/'+encodeURIComponent(sid));var d=await r.json();
+    if(d.status==='SUCCEEDED')success('Rapid Gateway','₨'+PB.order.totalPKR.toLocaleString()+' PKR');
+    else if(d.status==='FAILED'||d.status==='EXPIRED')fail('Payment '+d.status.toLowerCase()+'. Reference: '+PB.order.ref);
+    else if(n<10)setTimeout(function(){verify(sid,n+1)},2000);
+  }catch(e){if(n<10)setTimeout(function(){verify(sid,n+1)},2500)}
+}
+
+/* ── Manual payment ── */
+function manual(pane){
+  var o=PB.order;
+  var steps=[
+    'Note your order reference: <b style="color:#ffd958">'+o.ref+'</b>',
+    'Send <b style="color:#f2f6ff">$'+o.totalUSD.toFixed(2)+'</b> (or ₨'+o.totalPKR.toLocaleString()+' PKR) via your preferred method',
+    'Email your payment confirmation to <b style="color:#f2f6ff">orders@playbeat.digital</b> with your reference',
+    'Receive your digital keys by email within minutes of confirmation ⚡'];
+  pane.innerHTML='<ol style="list-style:none;padding:0;margin:12px 0;font-size:13px;color:#c8d3ea;line-height:1.7">'+
+    steps.map(function(s,i){return '<li style="display:flex;gap:10px;margin:8px 0"><span style="flex:none;width:22px;height:22px;border-radius:50%;background:#f4b400;color:#0c1330;font-weight:800;display:inline-flex;align-items:center;justify-content:center;font-size:12px">'+(i+1)+'</span><span>'+s+'</span></li>'}).join('')+
+    '</ol><button class="yb rounded-full h-10 w-full text-[13px] font-bold" id="manDone">Done — Clear Cart</button>';
+  document.getElementById('manDone').addEventListener('click',function(){mirror('AWAITING_PAYMENT');finish()});
+}
+
+function success(method,amount){
+  mirror('PAID');
+  body.innerHTML='<div class="co-ok"><div class="big">✅</div>'+
+    '<h2 class="text-lg font-extrabold" style="margin:0 0 8px">Payment Confirmed!</h2>'+
+    '<p class="co-hint">Paid <b style="color:#f2f6ff">'+amount+'</b> via '+method+'.</p>'+
+    '<div class="co-ref">Reference: <b>'+PB.order.ref+'</b></div>'+
+    '<p class="co-hint">Your digital keys are on the way — check your inbox (and spam folder) within minutes. ⚡</p>'+
+    '<button class="yb rounded-full h-10 w-full text-[13px] font-bold" id="okDone">Continue Shopping</button></div>';
+  document.getElementById('okDone').addEventListener('click',finish);
+}
+function fail(msg){
+  body.innerHTML='<div class="co-ok"><div class="big">⚠️</div>'+
+    '<h2 class="text-lg font-extrabold" style="margin:0 0 8px">Something went wrong</h2>'+
+    '<p class="co-hint">'+esc(msg)+'</p>'+
+    '<button class="yb rounded-full h-10 w-full text-[13px] font-bold" id="failClose">Close</button></div>';
+  document.getElementById('failClose').addEventListener('click',close);
+}
+function finish(){
+  try{localStorage.setItem('pb_cart','[]')}catch(e){}
+  location.reload();   // resets the closured cart state in the page script
+}
+
+/* ── Admin mirror (admin dashboard reads gv_orders) ── */
+function mirror(status){
+  try{
+    var o=PB.order;var arr=JSON.parse(localStorage.getItem('gv_orders')||'[]');
+    var ex=arr.filter(function(x){return x.ref===o.ref})[0];
+    if(ex)ex.status=status;
+    else arr.unshift({ref:o.ref,items:items().map(function(i){return i.n+' ×'+i.q}).join(', '),
+      totalUSD:o.totalUSD,totalPKR:o.totalPKR,status:status,date:new Date().toISOString()});
+    localStorage.setItem('gv_orders',JSON.stringify(arr.slice(0,200)));
+  }catch(e){}
+}
+})();
+</script>
+</body></html>

@@ -1,0 +1,179 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap');
+
+:root,
+.dark {
+  --background: 0 0% 95.3%;
+  --foreground: 240 10% 3.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 3.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 3.9%;
+  --primary: 259 64% 61%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 4.8% 95.9%;
+  --secondary-foreground: 240 5.9% 26%;
+  --muted: 240 4.8% 95.9%;
+  --muted-foreground: 0 0% 40.8%;
+  --accent: 259 64% 96%;
+  --accent-foreground: 259 64% 45%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 240 5.9% 90%;
+  --input: 240 5.9% 90%;
+  --ring: 259 64% 61%;
+  --radius: 0.35rem;
+}
+
+html,
+body {
+  height: auto !important;
+  min-height: 100% !important;
+  overflow-y: auto !important;
+}
+
+body {
+  background: #f3f3f3 !important;
+  color: #282f3a !important;
+  font-family: 'Roboto', sans-serif !important;
+  font-size: 0.875rem;
+}
+
+aside,
+.sidebar {
+  background: #ffffff !important;
+  border-right: 1px solid #e3e3e3 !important;
+  box-shadow: 0 0 20px rgba(40, 47, 58, 0.06) !important;
+}
+
+header,
+.navbar {
+  background: #ffffff !important;
+  border-bottom: 1px solid #e3e3e3 !important;
+  box-shadow: 0 4px 20px rgba(40, 47, 58, 0.05) !important;
+}
+
+main h1,
+main h2,
+main h3,
+main h4,
+main h5,
+main h6 {
+  color: #0f1531 !important;
+  font-weight: 700;
+}
+
+.pb-gradient-charcoal,
+[class*='bg-zinc-950'],
+[class*='bg-gray-950'] {
+  background-image: none !important;
+  background-color: #f3f3f3 !important;
+}
+
+.card,
+[role='dialog'],
+[data-slot='card'] {
+  border: 1px solid #e8e8e8 !important;
+  border-radius: 0.25rem !important;
+  background: #ffffff !important;
+  box-shadow: 0 3px 14px rgba(40, 47, 58, 0.07) !important;
+  color: #282f3a !important;
+}
+
+.btn,
+button[type='submit'],
+a.btn-primary,
+button.btn-primary,
+[class*='bg-primary'] {
+  border-color: #7859df !important;
+  background-color: #7859df !important;
+  color: #ffffff !important;
+}
+
+.btn:hover,
+button[type='submit']:hover,
+a.btn-primary:hover,
+button.btn-primary:hover,
+[class*='bg-primary']:hover {
+  border-color: #6847d5 !important;
+  background-color: #6847d5 !important;
+}
+
+input,
+select,
+textarea {
+  border: 1px solid #e3e3e3 !important;
+  border-radius: 2px !important;
+  background: #ffffff !important;
+  color: #282f3a !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #a0a0a0 !important;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #7859df !important;
+  box-shadow: 0 0 0 3px rgba(120, 89, 223, 0.13) !important;
+  outline: none !important;
+}
+
+.table,
+table {
+  color: #282f3a;
+}
+
+.table thead th,
+table thead th {
+  border-bottom: 2px solid #e8e8e8 !important;
+  background: #f8f9fa !important;
+  color: #686868 !important;
+  font-weight: 700;
+}
+
+.table td,
+.table th,
+table td {
+  border-color: #ededed !important;
+}
+
+.badge,
+[data-slot='badge'] {
+  border-radius: 0.25rem !important;
+  font-weight: 700;
+}
+
+a {
+  color: #7859df;
+}
+
+a:hover {
+  color: #6847d5;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f3f3f3;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+  background: #c7c7c7;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #7859df;
+}
+
+@media (max-width: 991.98px) {
+  aside,
+  .sidebar {
+    box-shadow: 0 10px 30px rgba(40, 47, 58, 0.16) !important;
+  }
+}

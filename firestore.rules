@@ -1,0 +1,160 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: /users/{userId}
+    // Fields:
+    //   - uid: string (required, matches userId, immutable)
+    //   - displayName: string (optional, <= 120 chars)
+    //   - email: string (optional, valid email format, <= 180 chars)
+    //   - phoneNumber: string (optional, <= 32 chars)
+    //   - photoURL: string (optional, http/https url, <= 500 chars)
+    //   - provider: string (required, one of known Firebase providers)
+    //   - role: string (required, 'customer' | 'admin', immutable for non-admins)
+    //   - createdAt: string (required, ISO-8601 string, immutable)
+    //   - updatedAt: string (required, ISO-8601 string)
+    //
+    // Subcollection: /users/{userId}/watchlist/{channelId}
+    // Fields:
+    //   - channelId: string (required, matches channelId, <= 80 chars)
+    //   - channelName: string (required, <= 140 chars)
+    //   - category: string (required, <= 60 chars)
+    //   - addedAt: string (required, ISO-8601 string)
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9._-]+$');
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        (
+          request.auth.token.email == "uzzirulzz@gmail.com" &&
+          request.auth.token.email_verified == true
+        ) ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        )
+      );
+    }
+
+    function isValidOptionalString(data, field, maxLen) {
+      return !(field in data) || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.size() <= 180 &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string &&
+        url.size() <= 500 &&
+        (url == "" || url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    function isValidIsoTimestamp(ts) {
+      return ts is string &&
+        ts.size() >= 19 &&
+        ts.size() <= 35 &&
+        ts.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z$");
+    }
+
+    function isValidProvider(provider) {
+      return provider is string &&
+        provider in ['google.com', 'facebook.com', 'github.com', 'oidc.tiktok', 'phone', 'password'];
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasOnly([
+          'uid',
+          'displayName',
+          'email',
+          'phoneNumber',
+          'photoURL',
+          'provider',
+          'role',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasAll(['uid', 'provider', 'role', 'createdAt', 'updatedAt']) &&
+        data.uid is string &&
+        data.uid == userId &&
+        isValidProvider(data.provider) &&
+        data.role in ['customer', 'admin'] &&
+        isValidIsoTimestamp(data.createdAt) &&
+        isValidIsoTimestamp(data.updatedAt) &&
+        isValidOptionalString(data, 'displayName', 120) &&
+        isValidOptionalString(data, 'phoneNumber', 32) &&
+        (!('email' in data) || data.email == "" || isValidEmail(data.email)) &&
+        (!('photoURL' in data) || isValidUrl(data.photoURL));
+    }
+
+    function isValidWatchlistItem(data, channelId) {
+      return data.keys().hasOnly(['channelId', 'channelName', 'category', 'addedAt']) &&
+        data.keys().hasAll(['channelId', 'channelName', 'category', 'addedAt']) &&
+        data.channelId is string &&
+        data.channelId == channelId &&
+        data.channelName is string &&
+        data.channelName.size() >= 1 &&
+        data.channelName.size() <= 140 &&
+        data.category is string &&
+        data.category.size() >= 1 &&
+        data.category.size() <= 60 &&
+        isValidIsoTimestamp(data.addedAt);
+    }
+
+    // Private User Profiles (PII Protected)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isValidId(userId) &&
+        isValidUserProfile(request.resource.data, userId) &&
+        (
+          (isOwner(userId) && request.resource.data.role == 'customer') ||
+          isAdmin()
+        );
+
+      allow update: if isValidId(userId) &&
+        isValidUserProfile(request.resource.data, userId) &&
+        request.resource.data.uid == resource.data.uid &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        (
+          (isOwner(userId) && request.resource.data.role == resource.data.role) ||
+          isAdmin()
+        );
+
+      allow delete: if isValidId(userId) && isAdmin();
+
+      // Per-user LIVE TV Watchlist
+      match /watchlist/{channelId} {
+        allow get, list: if isValidId(userId) && isValidId(channelId) && (isOwner(userId) || isAdmin());
+        allow create, update: if isValidId(userId) &&
+          isValidId(channelId) &&
+          (isOwner(userId) || isAdmin()) &&
+          isValidWatchlistItem(request.resource.data, channelId);
+        allow delete: if isValidId(userId) && isValidId(channelId) && (isOwner(userId) || isAdmin());
+      }
+    }
+
+    // Explicit Default-Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

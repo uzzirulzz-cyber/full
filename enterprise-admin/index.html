@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Primary SEO -->
+    <title>PlayBeat Digital — Premium Digital Marketplace & Smart Projectors</title>
+    <meta name="description" content="Instant digital keys, gaming accounts, subscriptions, AI tools, SaaS licenses, and high-performance 4K Smart Projectors with 24/7 automated delivery." />
+    <meta name="keywords" content="playbeat digital, digital marketplace pakistan, netflix subscription, chatgpt plus, windows 11 key, office 365, steam gift card, xbox game pass, smart 4k projector, magcubic projector, iptv" />
+    <meta name="author" content="PlayBeat Digital" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow" />
+    <meta name="google-site-verification" content="-USsgNvQV8Ip4Qjj00D5uJra7RFqmKvrFS4RhvKyqRw" />
+    <meta name="theme-color" content="#050814" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="canonical" href="https://playbeat.digital/" />
+
+    <!-- PWA / installable web app -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="PlayBeat Digital" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/pwa/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="PlayBeat" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/pwa/favicon-48.png" />
+
+    <!-- Open Graph (Facebook / WhatsApp / Telegram link previews) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="PlayBeat Digital" />
+    <meta property="og:url" content="https://playbeat.digital/" />
+    <meta property="og:title" content="PlayBeat Digital — Premium Digital Marketplace & Smart Projectors" />
+    <meta property="og:description" content="Instant digital keys, gaming accounts, subscriptions, AI tools, SaaS licenses, and high-performance 4K Smart Projectors with 24/7 automated delivery." />
+    <meta property="og:image" content="https://playbeat.digital/assets/images/playbeat/hero-marketplace.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="PlayBeat Digital — Premium Digital Marketplace" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://playbeat.digital/" />
+    <meta name="twitter:title" content="PlayBeat Digital — Premium Digital Marketplace & Smart Projectors" />
+    <meta name="twitter:description" content="Instant digital keys, gaming accounts, subscriptions, AI tools, SaaS licenses, and high-performance 4K Smart Projectors with 24/7 automated delivery." />
+    <meta name="twitter:image" content="https://playbeat.digital/assets/images/playbeat/hero-marketplace.png" />
+
+    <!-- Structured data: Organization + WebSite (helps Google index the brand) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://playbeat.digital/#organization",
+          "name": "PlayBeat Digital",
+          "url": "https://playbeat.digital/",
+          "logo": "https://playbeat.digital/playbeat-logo.png",
+          "contactPoint": {
+            "@type": "ContactPoint",
+            "contactType": "customer support",
+            "email": "support@playbeat.digital",
+            "availableLanguage": ["English", "Urdu"]
+          },
+          "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "Abbottabad",
+            "addressRegion": "Khyber Pakhtunkhwa",
+            "addressCountry": "PK"
+          }
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://playbeat.digital/#website",
+          "url": "https://playbeat.digital/",
+          "name": "PlayBeat Digital",
+          "description": "Premium digital marketplace & smart projectors",
+          "publisher": { "@id": "https://playbeat.digital/#organization" },
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": "https://playbeat.digital/?q={search_term_string}",
+            "query-input": "required name=search_term_string"
+          }
+        }
+      ]
+    }
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Perf (task §11): preload the two variable font files that render the
+         hero headline (Unbounded) and body text (Inter). Google Fonts serves
+         one variable file per family — same files the stylesheet below would
+         discover, just discovered earlier, so the headline paints in its final
+         typeface immediately (kills the fallback->webfont swap that showed up
+         as unstable mobile CLS/LCP). Pure loading-order change: zero visual
+         difference. If Google ever bumps these versioned URLs the preload
+         simply misses and the CSS discovery path still applies the font. -->
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0Q5nw.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/unbounded/v12/Yq6W-LOTXCb04q32xlpwu8ZfvRIkSQ.woff2" />
+    <!-- Perf (task §5): the measured mobile LCP element is the hero stage
+         <main class="pbhs-stage"> whose background is /hero_header_v3.webp.
+         A CSS background image is invisible to the preload scanner, which
+         Lighthouse measured as LCP resource load delay. Preloading it with
+         fetchpriority=high makes the LCP resource discoverable in the initial
+         document at high priority. Pure loading-order change: the exact same
+         image renders in the exact same place. -->
+    <link rel="preload" as="image" href="/hero_header_v3.webp" fetchpriority="high" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Montserrat:wght@500;600;700;800&family=Unbounded:wght@800;900&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=JetBrains+Mono:wght@400;500;600;700&family=Nunito:wght@300;400;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script type="module" src="/src/registerSW.ts"></script>
+
+    <!-- Perf (task §14): third-party tag DEFERRAL — measured in production
+         Lighthouse, GTM + GA4 + Meta Pixel + AdSense contributed ~2.3s of
+         main-thread long tasks and ~420KB of unused JS during the critical
+         window. The stubs below are installed inline (zero network cost) so
+         every tracking call keeps working: dataLayer/gtag/fbq/adsbygoogle
+         queue their arguments and replay them the moment the real libraries
+         arrive AFTER the page has loaded (+3s idle, 8s absolute cap).
+         Nothing is removed and no consent flow changes — tags fire a few
+         seconds later, which no user-visible feature depends on. -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-5TYLQD0J2N');
+      gtag('config', 'G-WPHS88GRJS');
+    </script>
+
+    <!-- Meta Pixel stub (queues calls until the deferred loader below) -->
+    <script>
+    !function(f,b,e,v,n,t,s)
+    {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+    if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+    n.queue=[];}(window, document,'script');
+    fbq('init', '1971402550484565');
+    fbq('track', 'PageView');
+    </script>
+
+    <!-- Google AdSense (publisher ca-pub-9777611286139666) -->
+    <meta name="google-adsense-account" content="ca-pub-9777611286139666" />
+
+    <!-- Deferred third-party loaders (run once, after load + idle) -->
+    <script>
+    (function () {
+      var fired = false;
+      function loadThirdParty() {
+        if (fired) return;
+        fired = true;
+        try {
+          // GA4 (gtag.js) — queued dataLayer commands replay on arrival
+          var g = document.createElement('script');
+          g.async = true;
+          g.src = 'https://www.googletagmanager.com/gtag/js?id=G-WPHS88GRJS';
+          document.head.appendChild(g);
+          // AdSense
+          var a = document.createElement('script');
+          a.async = true;
+          a.crossOrigin = 'anonymous';
+          a.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9777611286139666';
+          document.head.appendChild(a);
+          // Meta Pixel library — queued fbq calls replay on arrival
+          var p = document.createElement('script');
+          p.async = true;
+          p.src = 'https://connect.facebook.net/en_US/fbevents.js';
+          document.head.appendChild(p);
+        } catch (e) { /* never block the page */ }
+      }
+      function schedule() {
+        setTimeout(loadThirdParty, 3000);
+      }
+      if (document.readyState === 'complete') schedule();
+      else window.addEventListener('load', schedule);
+      setTimeout(loadThirdParty, 8000); // absolute cap — tags always load
+    })();
+    </script>
+  </head>
+  <body class="bg-[#0A0A0B] text-[#E0E0E0] antialiased selection:bg-emerald-500 selection:text-black">
+    <!-- Meta Pixel Code (noscript fallback) -->
+    <noscript><img height="1" width="1" style="display:none"
+    src="https://www.facebook.com/tr?id=1971402550484565&ev=PageView&noscript=1"
+    /></noscript>
+    <!-- End Meta Pixel Code -->
+    <div id="hero-root"></div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  <script src="https://gateway.playbeat.live/playbeat-apps.js" defer></script>
+  </body>
+</html>

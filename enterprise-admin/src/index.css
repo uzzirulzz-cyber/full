@@ -1,0 +1,1289 @@
+@layer theme, base, pb-admin-vendor, components, utilities;
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #070B12;
+    color: #F5F7FA;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  .font-serif {
+    font-family: 'Playfair Display', Georgia, serif;
+  }
+  
+  .font-sans {
+    font-family: 'Inter', sans-serif;
+  }
+  
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* =========================================================
+   PLAYBEAT DIGITAL — PREMIUM UI/UX UPGRADE v2.0
+   Dark premium foundation · Enterprise-grade · Conversion-focused
+   ========================================================= */
+
+:root {
+  /* Premium dark palette (per UI upgrade spec) */
+  --navy-deep: #070B12;
+  --navy-surface: #0D131D;
+  --navy-card: #121A26;
+  --navy-elevated: #16202E;
+  --navy-border: rgba(255, 255, 255, 0.08);
+  --navy-border-hover: rgba(255, 255, 255, 0.14);
+  
+  /* Text */
+  --text-primary: #F5F7FA;
+  --text-secondary: #AAB4C3;
+  --text-muted: #6B7689;
+  
+  /* Accents */
+  --gold-primary: #F5C542;
+  --gold-light: #FFD968;
+  --gold-dark: #D4A532;
+  --gold-glow: rgba(245, 197, 66, 0.25);
+  
+  --electric-blue: #3B82F6;
+  --electric-sky: #60A5FA;
+  --blue-glow: rgba(59, 130, 246, 0.2);
+  
+  /* Legacy compat */
+  --silver-glow: rgba(226, 232, 240, 0.25);
+  --water-blue-glow: rgba(56, 189, 248, 0.2);
+}
+
+/* Deep Navy Radiant Background — premium v2.0 */
+.bg-midnight-canvas {
+  background: radial-gradient(ellipse at 50% -20%, #0D131D 0%, #070B12 40%, #050810 100%);
+  background-attachment: fixed;
+}
+
+/* Dynamic Water Glow Flowing Animations */
+@keyframes waterFlow {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translate(4%, 3%) scale(1.08);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.45;
+  }
+}
+
+@keyframes waterWaveSubtle {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.05);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+@keyframes goldSheen {
+  0% {
+    transform: translateX(-150%) skewX(-25deg);
+  }
+  40% {
+    transform: translateX(250%) skewX(-25deg);
+  }
+  100% {
+    transform: translateX(250%) skewX(-25deg);
+  }
+}
+
+@keyframes goldGlowPulse {
+  0%, 100% {
+    box-shadow: 0 0 20px -3px rgba(250, 204, 21, 0.3), 0 0 8px 1px rgba(250, 204, 21, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 35px 2px rgba(250, 204, 21, 0.5), 0 0 12px 2px rgba(250, 204, 21, 0.3);
+  }
+}
+
+@keyframes liquidUnderGlow {
+  0%, 100% {
+    opacity: 0.4;
+    filter: blur(35px);
+  }
+  50% {
+    opacity: 0.75;
+    filter: blur(45px);
+  }
+}
+
+/* Glassmorphic Navy Surfaces */
+.glass-navy-panel {
+  background: linear-gradient(135deg, rgba(13, 23, 56, 0.85) 0%, rgba(8, 14, 36, 0.92) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.12);
+  border-radius: 18px;
+}
+
+.glass-navy-card {
+  background: linear-gradient(145deg, rgba(15, 27, 66, 0.7) 0%, rgba(9, 16, 40, 0.85) 100%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(226, 232, 240, 0.12);
+  border-radius: 18px;
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-navy-card:hover {
+  border-color: rgba(250, 204, 21, 0.35);
+  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.7), 0 0 30px -5px rgba(56, 189, 248, 0.18), 0 0 1px 1px rgba(250, 204, 21, 0.2);
+}
+
+/* Water Glow Container & Effect Classes */
+.water-glow-layer {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.22) 0%, rgba(30, 58, 138, 0.18) 50%, transparent 75%);
+  animation: waterFlow 8s ease-in-out infinite;
+}
+
+.water-glow-layer-gold {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(250, 204, 21, 0.15) 0%, rgba(217, 119, 6, 0.08) 50%, transparent 75%);
+  animation: waterFlow 10s ease-in-out infinite reverse;
+}
+
+/* Liquid Glass Highlight */
+.liquid-glass-highlight {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 50%, rgba(250, 204, 21, 0.03) 100%);
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* Gold CTA Buttons & Gradients */
+.btn-gold-gradient {
+  background: linear-gradient(135deg, #FDE047 0%, #FACC15 50%, #EAB308 100%);
+  color: #070B19;
+  font-weight: 600;
+  border: 1px solid rgba(254, 240, 138, 0.5);
+  box-shadow: 0 4px 20px -2px rgba(250, 204, 21, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-gold-gradient:hover {
+  background: linear-gradient(135deg, #FEF08A 0%, #FDE047 50%, #FACC15 100%);
+  box-shadow: 0 6px 25px 0px rgba(250, 204, 21, 0.5);
+  transform: translateY(-1px);
+}
+
+.btn-gold-gradient:active {
+  transform: scale(0.97);
+}
+
+/* Silver Metallic Button */
+.btn-silver-metallic {
+  background: linear-gradient(145deg, rgba(241, 245, 249, 0.12) 0%, rgba(148, 163, 184, 0.06) 100%);
+  color: #F8FAFC;
+  border: 1px solid rgba(226, 232, 240, 0.2);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 4px 15px -3px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s ease;
+}
+
+.btn-silver-metallic:hover {
+  background: linear-gradient(145deg, rgba(241, 245, 249, 0.2) 0%, rgba(148, 163, 184, 0.12) 100%);
+  border-color: rgba(226, 232, 240, 0.4);
+  color: #FFFFFF;
+  transform: translateY(-1px);
+}
+
+/* Metallic Badges & Borders */
+.badge-gold {
+  background: rgba(250, 204, 21, 0.12);
+  color: #FDE047;
+  border: 1px solid rgba(250, 204, 21, 0.3);
+}
+
+.badge-silver {
+  background: rgba(226, 232, 240, 0.08);
+  color: #E2E8F0;
+  border: 1px solid rgba(226, 232, 240, 0.18);
+}
+
+.badge-navy {
+  background: rgba(30, 58, 138, 0.3);
+  color: #7DD3FC;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+/* Gold Text Highlight */
+.text-gold-gradient {
+  background: linear-gradient(135deg, #FFFBEB 0%, #FEF08A 30%, #FACC15 70%, #EAB308 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.text-silver-gradient {
+  background: linear-gradient(180deg, #FFFFFF 0%, #E2E8F0 50%, #94A3B8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Metallic Shimmer Effect */
+.sheen-effect {
+  position: relative;
+  overflow: hidden;
+}
+
+.sheen-effect::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    60deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.12) 50%,
+    transparent 65%
+  );
+  transform: translateX(-100%);
+  transition: transform 0.6s ease;
+  pointer-events: none;
+}
+
+.sheen-effect:hover::after {
+  transform: translateX(100%);
+}
+
+/* Custom Navy/Gold Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #050814;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(250, 204, 21, 0.45);
+}
+
+/* =========================================================
+   STOREFRONT THEME LAYER — "PlayBeat LeadPulse" look
+   (Deep navy canvas · gold CTAs · electric-blue accents ·
+   clean bold sans typography)
+   Scoped under .pb-store (storefront root only). The admin
+   console (.pbadmin), admin login (.pb-adminlogin), checkout
+   + payment pages (.pbx-scope), the ProfileCraft account
+   dashboard (.pcraft-root) and the printable invoice
+   (.pb-doc-root) are explicitly OUT of scope below.
+   Zero markup/logic changes — theme only.
+   ========================================================= */
+
+/* 1) Typography personality: the storefront retires the
+      terminal/mono voice for the reference's clean bold sans.
+      Tabular numerals keep prices/counters perfectly aligned. */
+.pb-store .font-mono {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-feature-settings: 'tnum' 1, 'cv05' 1;
+  letter-spacing: 0.01em;
+}
+
+/* Re-assert JetBrains Mono where the mono voice is contractual */
+.pb-store .pbadmin .font-mono,
+.pb-store .pb-adminlogin .font-mono,
+.pb-store .pbx-scope .font-mono,
+.pb-store .pcraft-root .font-mono,
+.pb-store .pb-doc-root .font-mono {
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0;
+}
+
+/* 2) Electric-blue display headings (ref: "Top Picks for You") */
+.pb-blue-heading {
+  background: linear-gradient(100deg, #7DD3FC 0%, #38BDF8 35%, #3B82F6 75%, #2563EB 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 22px rgba(56, 189, 248, 0.22));
+}
+
+/* 3) Gold uppercase eyebrow labels (ref: "POPULAR PRODUCTS") */
+.pb-eyebrow {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: #FACC15;
+}
+
+/* Sky variant of the eyebrow (ref hero: blue caps line) */
+.pb-eyebrow-sky {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #7DD3FC;
+}
+
+/* 4) Blue interactive links (ref "View All Products →") */
+.pb-store a,
+.pb-store button {
+  scroll-margin-top: 96px;
+}
+.pb-link-blue {
+  color: #7DD3FC;
+  transition: color 0.2s ease;
+}
+.pb-link-blue:hover {
+  color: #BAE6FD;
+}
+
+/* 5) Bluer ambient canvas behind storefront sections */
+.pb-store {
+  background:
+    radial-gradient(ellipse 90% 42% at 50% -8%, rgba(37, 99, 235, 0.14) 0%, transparent 62%),
+    radial-gradient(ellipse 60% 34% at 84% 4%, rgba(56, 189, 248, 0.08) 0%, transparent 60%),
+    #050814;
+}
+
+/* 6) Gold CTA — align gradient to the ref's flat vivid gold */
+.pb-store .btn-gold-gradient {
+  background: linear-gradient(135deg, #FDE047 0%, #FACC15 55%, #F59E0B 100%);
+}
+
+/* ── Hero 3D logo dynamics (PlayBeat 3D brand mark) ───────────────────────── */
+@keyframes heroFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
+}
+
+@keyframes logoGlowPulse {
+  0%, 100% { opacity: 0.55; transform: translate(-50%, -50%) scale(0.94); }
+  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
+}
+
+/* Diagonal light band sweeping across the logo; the PNG itself is used as the
+   mask so the glint only lights up actual logo pixels (chrome, bolt, text). */
+.hero-logo-shine {
+  background: linear-gradient(
+    115deg,
+    transparent 0%,
+    transparent 38%,
+    rgba(255, 255, 255, 0.75) 50%,
+    rgba(186, 230, 253, 0.55) 54%,
+    transparent 66%,
+    transparent 100%
+  );
+  background-size: 250% 100%;
+  background-position: 120% 0;
+  mix-blend-mode: overlay;
+  -webkit-mask-image: url('/assets/images/playbeat/playbeat-3d-hero.png');
+  mask-image: url('/assets/images/playbeat/playbeat-3d-hero.png');
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+@keyframes heroShine {
+  0% { background-position: 130% 0; }
+  55%, 100% { background-position: -80% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-logo-shine { animation: none !important; }
+}
+
+@keyframes adminLogoFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/* =========================================================
+   PREMIUM UI v2.0 — COMPONENT SYSTEM
+   Buttons, cards, inputs, badges, tables, micro-interactions
+   ========================================================= */
+
+/* Premium glass effect (selective use only) */
+.pb-glass {
+  background: rgba(13, 19, 29, 0.75);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid var(--navy-border);
+}
+
+/* Premium elevated surface */
+.pb-surface {
+  background: var(--navy-card);
+  border: 1px solid var(--navy-border);
+  border-radius: 12px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.pb-surface:hover {
+  border-color: var(--navy-border-hover);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* Premium primary button (gold) */
+.pb-btn-primary {
+  background: linear-gradient(135deg, var(--gold-primary) 0%, var(--gold-dark) 100%);
+  color: #070B12;
+  font-weight: 700;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px var(--gold-glow);
+}
+.pb-btn-primary:hover {
+  background: linear-gradient(135deg, var(--gold-light) 0%, var(--gold-primary) 100%);
+  box-shadow: 0 6px 20px var(--gold-glow);
+  transform: translateY(-1px);
+}
+.pb-btn-primary:active {
+  transform: translateY(0);
+}
+.pb-btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Premium secondary button */
+.pb-btn-secondary {
+  background: var(--navy-elevated);
+  color: var(--text-primary);
+  font-weight: 600;
+  border: 1px solid var(--navy-border-hover);
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.pb-btn-secondary:hover {
+  background: var(--navy-card);
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: 0 4px 12px var(--blue-glow);
+}
+
+/* Premium ghost button */
+.pb-btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.pb-btn-ghost:hover {
+  background: var(--navy-elevated);
+  color: var(--text-primary);
+  border-color: var(--navy-border);
+}
+
+/* Premium danger button */
+.pb-btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  font-weight: 600;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.pb-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* Premium input */
+.pb-input {
+  background: var(--navy-surface);
+  border: 1px solid var(--navy-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: var(--text-primary);
+  font-size: 14px;
+  transition: all 0.2s ease;
+  outline: none;
+}
+.pb-input:focus {
+  border-color: var(--gold-primary);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+.pb-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Premium badge */
+.pb-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.pb-badge-gold { background: rgba(245, 197, 66, 0.15); color: var(--gold-primary); border: 1px solid rgba(245, 197, 66, 0.3); }
+.pb-badge-blue { background: rgba(59, 130, 246, 0.15); color: var(--electric-sky); border: 1px solid rgba(59, 130, 246, 0.3); }
+.pb-badge-green { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+.pb-badge-red { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+.pb-badge-silver { background: rgba(170, 180, 195, 0.15); color: var(--text-secondary); border: 1px solid var(--navy-border-hover); }
+
+/* Premium table */
+.pb-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.pb-table thead th {
+  background: var(--navy-surface);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--navy-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.pb-table tbody tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background 0.15s ease;
+}
+.pb-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.pb-table tbody td {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+/* Premium card hover (for product cards) */
+.pb-card-hover {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.pb-card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--navy-border-hover);
+}
+
+/* Premium skeleton loader */
+@keyframes pb-shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+.pb-skeleton {
+  background: linear-gradient(90deg, var(--navy-surface) 0%, var(--navy-elevated) 50%, var(--navy-surface) 100%);
+  background-size: 1000px 100%;
+  animation: pb-shimmer 2s infinite linear;
+  border-radius: 8px;
+}
+
+/* Premium focus ring (accessibility) */
+*:focus-visible {
+  outline: 2px solid var(--gold-primary);
+  outline-offset: 2px;
+}
+
+/* Premium scrollbar */
+.custom-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+.custom-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Premium toast animation */
+@keyframes pb-toast-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.pb-toast {
+  animation: pb-toast-in 0.25s ease-out;
+}
+
+/* Premium modal entrance */
+@keyframes pb-modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.pb-modal {
+  animation: pb-modal-in 0.2s ease-out;
+}
+
+/* Premium tab transition */
+.pb-tab-content {
+  animation: pb-fade-in 0.2s ease-out;
+}
+@keyframes pb-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Premium empty state */
+.pb-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.pb-empty-state svg {
+  opacity: 0.3;
+  margin-bottom: 12px;
+}
+
+/* Premium status indicator */
+.pb-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+.pb-status-online { background: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
+.pb-status-away { background: #f59e0b; }
+.pb-status-busy { background: #ef4444; }
+.pb-status-offline { background: #6b7689; }
+
+/* Premium loading spinner */
+@keyframes pb-spin {
+  to { transform: rotate(360deg); }
+}
+.pb-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--navy-border);
+  border-top-color: var(--gold-primary);
+  border-radius: 50%;
+  animation: pb-spin 0.6s linear infinite;
+}
+
+/* Premium header glass */
+.pb-header-glass {
+  background: rgba(7, 11, 18, 0.8);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  border-bottom: 1px solid var(--navy-border);
+}
+
+/* Premium product image container */
+.pb-product-image {
+  overflow: hidden;
+  border-radius: 10px 10px 0 0;
+}
+.pb-product-image img,
+.pb-product-image svg {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.pb-card-hover:hover .pb-product-image img,
+.pb-card-hover:hover .pb-product-image svg {
+  transform: scale(1.05);
+}
+
+/* Premium nav active state */
+.pb-nav-active {
+  color: var(--gold-primary);
+  position: relative;
+}
+.pb-nav-active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gold-primary);
+  border-radius: 1px;
+}
+
+/* Premium glow accent (sparingly) */
+.pb-glow-gold {
+  box-shadow: 0 0 20px var(--gold-glow);
+}
+.pb-glow-blue {
+  box-shadow: 0 0 20px var(--blue-glow);
+}
+
+/* Responsive typography */
+@media (max-width: 768px) {
+  .pb-btn-primary, .pb-btn-secondary, .pb-btn-ghost, .pb-btn-danger {
+    padding: 8px 16px;
+    font-size: 13px;
+  }
+  .pb-input {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+}
+
+/* ============================================================
+   PlayBeat storefront — Hero Header redesign (design: "PlayBeat
+   Digital — Hero Header" artifact) — Montserrat + Unbounded,
+   deep-navy panels, gold/orange accents, floating 3D brand stage
+   ============================================================ */
+.pb-mont { font-family: 'Montserrat', 'Inter', system-ui, sans-serif; }
+.pb-unbounded { font-family: 'Unbounded', 'Montserrat', system-ui, sans-serif; }
+
+/* --- headline gradient word (DIGITAL) --- */
+.pb-h1-y {
+  background: linear-gradient(90deg, #ffd01f 20%, #ff7a00 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 22px rgba(255, 154, 0, 0.27));
+}
+
+/* --- eyebrow rule line --- */
+.pb-eyebrow-line {
+  height: 2px;
+  width: 90px;
+  background: linear-gradient(90deg, #3d8bff, transparent);
+}
+
+/* --- 3D floating brand stage --- */
+.pb-stage-wrap { perspective: 1200px; }
+.pb-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1.02;
+  max-width: 760px;
+  transform-style: preserve-3d;
+  transition: transform 0.15s ease-out;
+  will-change: transform;
+}
+.pb-ring { position: absolute; border-radius: 50%; border: 2px solid transparent; pointer-events: none; }
+.pb-ring-1 {
+  inset: 10% -2% 14% 2%;
+  border-color: rgba(139, 91, 255, 0.4);
+  box-shadow: 0 0 40px rgba(139, 91, 255, 0.33), inset 0 0 40px rgba(255, 79, 160, 0.2);
+  transform: rotate(-14deg);
+}
+.pb-ring-2 {
+  inset: 20% 6% 20% 10%;
+  border-color: rgba(63, 184, 255, 0.33);
+  box-shadow: 0 0 36px rgba(63, 184, 255, 0.27);
+  transform: rotate(12deg);
+}
+.pb-pod {
+  position: absolute;
+  left: 8%;
+  right: 2%;
+  bottom: 3%;
+  height: 17%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, #16348a, #070f2c 70%);
+  border: 3px solid #3f95ff;
+  box-shadow: 0 0 30px #3f95ff, 0 0 80px rgba(139, 91, 255, 0.47), inset 0 0 30px rgba(63, 149, 255, 0.53);
+}
+.pb-pod::before {
+  content: "";
+  position: absolute;
+  inset: 16%;
+  border-radius: 50%;
+  border: 2px solid #ffb12e;
+  box-shadow: 0 0 24px #ffb12e;
+}
+.pb-tile {
+  position: absolute;
+  width: var(--w, 19%);
+  aspect-ratio: 1;
+  border-radius: 22%;
+  display: grid;
+  place-items: center;
+  transform: rotate(var(--r, 0deg));
+  animation: pb-fl 6s ease-in-out infinite;
+  animation-delay: var(--d, 0s);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(145deg, var(--c1, #14204a), var(--c2, #070c22));
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.67), 0 0 26px var(--g, rgba(74, 107, 255, 0.33)), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  font-weight: 800;
+  text-align: center;
+  color: #fff;
+  line-height: 1.05;
+}
+.pb-tile svg { width: 62%; height: auto; }
+.pb-tile .pb-tx { font-size: clamp(8px, 1.45vw, 19px); }
+.pb-tile .pb-col { display: flex; flex-direction: column; align-items: center; gap: 6%; }
+@keyframes pb-fl { 50% { translate: 0 -7px; } }
+.pb-tile-core {
+  left: 34%;
+  top: 20%;
+  width: 37%;
+  --c1: #0e1d55;
+  --c2: #060b24;
+  --g: rgba(63, 149, 255, 0.6);
+  border: 2px solid #5db3ff;
+  border-radius: 26%;
+  z-index: 3;
+  animation-name: pb-flc;
+}
+@keyframes pb-flc { 50% { translate: 0 -5px; } }
+.pb-gear { position: absolute; z-index: 2; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.67)); }
+.pb-crown {
+  position: absolute;
+  left: 41%;
+  top: 55%;
+  width: 26%;
+  z-index: 4;
+  filter: drop-shadow(0 0 18px #ffb300);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pb-tile { animation: none; }
+  .pb-stage { transition: none; }
+}
+
+/* ============================================================
+   Hero Header Stage v3 — image-based header+hero with hotspots
+   ("playb11eat-screenshot-exact" artifact; 1672×941 grid,
+   container-query units so overlays scale with the artwork.
+   Stage caps at the artifact's native 1672px .page width so the
+   art always renders 1:1 or downscaled — never upscaled/soft;
+   wrapper bg #000b1d blends ultrawide gutters into the edges.)
+   ============================================================ */
+.pbhs-stage {
+  position: relative;
+  min-width: 1000px;
+  max-width: 1672px;
+  margin: auto;
+  aspect-ratio: 1672 / 941;
+  background-position: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  container-type: inline-size;
+}
+.pbhs-h {
+  position: absolute;
+  display: block;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.pbhs-h:hover {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 1.4cqw rgba(61, 139, 255, 0.4);
+}
+.pbhs-h:focus-visible {
+  outline: 2px solid #12d3ff;
+}
+/* Text zone between the baked magnifier (ends 24.28%) and the baked
+   "All Categories" select (starts 53.828%). The artwork bakes the
+   placeholder, so the input is transparent while idle (design shows
+   1:1) and only masks with the pill's own sampled gradient when
+   focused/typing — no double text, no flat patch. Box insets avoid
+   the pill's baked border strokes (y=90 top, y=146-147 bottom). */
+.pbhs-s {
+  position: absolute;
+  left: 24.4%;
+  top: 9.777%;
+  width: 29.428%;
+  height: 5.74%;
+}
+.pbhs-s input {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: #fff;
+  font: 500 0.92cqw Montserrat, system-ui, sans-serif;
+  padding-left: 2.1cqw;
+}
+.pbhs-s input::placeholder {
+  color: transparent;
+  opacity: 1;
+}
+.pbhs-s input:focus,
+.pbhs-s input:not(:placeholder-shown) {
+  background: linear-gradient(90deg, #001231 0%, #01173a 22%, #021b42 45%, #021e48 66%, #021f4b 82%, #022250 100%);
+}
+.pbhs-sb {
+  position: absolute;
+  left: 61.962%;
+  top: 9.352%;
+  width: 4.187%;
+  height: 6.589%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 0 40px 40px 0;
+  transition: 0.2s;
+  display: grid;
+  place-items: center;
+}
+.pbhs-sb:hover {
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: 0 0 1.4cqw rgba(31, 134, 255, 0.67);
+}
+.pbhs-c {
+  position: absolute;
+  left: 53.828%;
+  top: 10.627%;
+  width: 7.057%;
+  height: 4.038%;
+  border-radius: 8px;
+}
+/* Rendered only when a category is picked — masks the baked
+   "All Categories" label with the select zone's own bg (#012253). */
+.pbhs-c span {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 6%;
+  background: #012253;
+  border-radius: 8px;
+  font: 600 0.96cqw Montserrat, system-ui, sans-serif;
+  color: #fff;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.pbhs-c select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px;
+}
+.pbhs-c:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+/* Gold live badges matching the design's baked cart "0" (17px on the
+   1672 grid ≈ 1.02cqw): slightly larger so they fully cover it. */
+.pbhs-badge {
+  position: absolute;
+  translate: -50% -50%;
+  min-width: 1.4cqw;
+  height: 1.4cqw;
+  padding: 0 0.3cqw;
+  border-radius: 999px;
+  background: #ffc21c;
+  color: #201600;
+  font: 800 0.72cqw/1.4cqw Montserrat, system-ui, sans-serif;
+  text-align: center;
+  box-shadow: 0 0 0.5cqw rgba(255, 194, 28, 0.45);
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* ============================================================
+   Admin Login page — image stage with functional overlays
+   ("PlayBeat Digital — Admin Login" artifact; 1536×1024 grid)
+   ============================================================ */
+.pb-al-min {
+  color-scheme: dark;
+}
+.pb-al-stage {
+  position: relative;
+  width: 100%;
+  max-width: 2200px;
+  margin: auto;
+  aspect-ratio: 1536 / 1024;
+  min-height: 100vh;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  container-type: inline-size;
+}
+.pb-al-fld {
+  position: absolute;
+  left: 12.76%;
+  width: 29.62%;
+  border-radius: 1cqw;
+  transition: box-shadow 0.2s;
+}
+.pb-al-fld:focus-within {
+  box-shadow: 0 0 0 0.2cqw #12d3ff, 0 0 1.8cqw rgba(18, 211, 255, 0.67);
+}
+.pb-al-err {
+  box-shadow: 0 0 0 0.2cqw #ff5a6e, 0 0 1.4cqw rgba(255, 90, 110, 0.53) !important;
+}
+.pb-al-u {
+  top: 51.66%;
+  height: 5.86%;
+}
+.pb-al-p {
+  top: 59.47%;
+  height: 5.57%;
+}
+.pb-al-fld input {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #fff;
+  font: 500 1.3cqw Montserrat, system-ui, sans-serif;
+  padding: 0 6cqw 0 4.3cqw;
+  border-radius: 1cqw;
+}
+.pb-al-fld input::placeholder {
+  color: #8fb0e6;
+}
+.pb-al-eye {
+  position: absolute;
+  right: 0.4cqw;
+  top: 50%;
+  translate: 0 -50%;
+  width: 3cqw;
+  height: 3cqw;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: #5aa6ff;
+  display: grid;
+  place-items: center;
+}
+.pb-al-eye svg {
+  width: 1.7cqw;
+  height: 1.7cqw;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.pb-al-eye:hover {
+  color: #12d3ff;
+}
+.pb-al-msg {
+  position: absolute;
+  left: 12.76%;
+  top: 65.1%;
+  width: 29.62%;
+  height: 2.6%;
+  font-size: 0.88cqw;
+  color: #ff8896;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.pb-al-msg-ok {
+  color: #5be3a8;
+}
+.pb-al-go {
+  position: absolute;
+  left: 12.76%;
+  top: 67.97%;
+  width: 29.62%;
+  height: 6.25%;
+  border: 0;
+  border-radius: 1cqw;
+  background: transparent;
+  cursor: pointer;
+  transition: 0.2s;
+  color: #fff;
+  font: 600 1.25cqw Montserrat, system-ui, sans-serif;
+}
+.pb-al-go:hover {
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: 0 0 2cqw rgba(58, 123, 255, 0.8);
+}
+.pb-al-go:active {
+  translate: 0 0.1cqw;
+  background: rgba(0, 0, 0, 0.13);
+}
+.pb-al-go-ld {
+  background: linear-gradient(180deg, #2b5bff, #0f2fd8);
+  cursor: wait;
+  display: flex;
+  gap: 0.9cqw;
+  align-items: center;
+  justify-content: center;
+}
+.pb-al-go i {
+  display: none;
+  width: 1.3cqw;
+  height: 1.3cqw;
+  border: 0.22cqw solid rgba(255, 255, 255, 0.33);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: pb-al-spin 0.8s linear infinite;
+}
+.pb-al-go-ld i {
+  display: block;
+}
+@keyframes pb-al-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+.pb-al-lnk {
+  position: absolute;
+  left: 5.8%;
+  top: 88.9%;
+  width: 15%;
+  height: 3.6%;
+  border: 0;
+  background: transparent;
+  border-radius: 0.5cqw;
+  cursor: pointer;
+}
+.pb-al-lnk:hover {
+  background: rgba(31, 107, 255, 0.13);
+}
+/* Mobile: design spec — widen the stage and pan horizontally */
+@media (max-width: 760px) {
+  .pb-al-stage {
+    width: 205vw;
+    max-width: none;
+    min-height: 0;
+  }
+}
+
+/* ===========================================================
+   HTML Editor + Rendered Description (WooCommerce-style)
+   Used by: src/components/admin/HtmlEditor.tsx
+   Supports: h1-h4, p, strong/b, em/i, ul/ol/li, a, blockquote, table, img
+   =========================================================== */
+
+.pb-html-editor:empty:before {
+  content: attr(data-ph);
+  color: rgb(161 161 170 / 0.6);
+  pointer-events: none;
+}
+.pb-html-editor:focus:empty:before { opacity: 0.5; }
+.pb-html-editor { line-height: 1.6; word-break: break-word; }
+.pb-html-editor h1 { font-size: 1.625rem; font-weight: 700; line-height: 1.2; margin: 1rem 0 0.5rem; }
+.pb-html-editor h2 { font-size: 1.25rem; font-weight: 700; line-height: 1.3; margin: 1.25rem 0 0.5rem; }
+.pb-html-editor h3 { font-size: 1.0625rem; font-weight: 600; margin: 1rem 0 0.5rem; }
+.pb-html-editor h4 { font-size: 0.9375rem; font-weight: 600; margin: 0.875rem 0 0.5rem; }
+.pb-html-editor p { margin: 0 0 0.75rem; }
+.pb-html-editor ul, .pb-html-editor ol { margin: 0 0 0.75rem 1.5rem; }
+.pb-html-editor ul { list-style: disc; }
+.pb-html-editor ol { list-style: decimal; }
+.pb-html-editor li { margin: 0.25rem 0; }
+.pb-html-editor a { color: #624bff; text-decoration: underline; text-underline-offset: 2px; }
+.pb-html-editor a:hover { opacity: 0.8; }
+.pb-html-editor blockquote {
+  border-left: 3px solid #624bff; margin: 0 0 0.75rem; padding: 0.5rem 0 0.5rem 1rem;
+  background: rgb(244 246 248); color: rgb(99 115 129); font-style: italic;
+}
+.pb-html-editor table { width: 100%; border-collapse: collapse; margin: 0 0 0.75rem; font-size: 0.875rem; }
+.pb-html-editor th, .pb-html-editor td { border: 1px solid rgb(223 227 232); padding: 0.5rem 0.75rem; text-align: left; }
+.pb-html-editor thead th { background: rgb(244 246 248); font-weight: 600; }
+.pb-html-editor tbody tr:nth-child(even) { background: rgb(244 246 248 / 0.5); }
+.pb-html-editor strong, .pb-html-editor b { font-weight: 700; }
+.pb-html-editor em, .pb-html-editor i { font-style: italic; }
+.pb-html-editor img { max-width: 100%; height: auto; border-radius: 0.5rem; }
+
+/* Storefront rendered description (for customer-facing product pages) */
+.pb-rendered-description h1 { font-size: 1.5rem; font-weight: 700; line-height: 1.2; margin: 1rem 0 0.5rem; }
+.pb-rendered-description h2 { font-size: 1.1875rem; font-weight: 700; line-height: 1.3; margin: 1.125rem 0 0.5rem; }
+.pb-rendered-description h3 { font-size: 1rem; font-weight: 600; margin: 0.875rem 0 0.5rem; }
+.pb-rendered-description h4 { font-size: 0.875rem; font-weight: 600; margin: 0.75rem 0 0.5rem; }
+.pb-rendered-description p { margin: 0 0 0.625rem; }
+.pb-rendered-description ul, .pb-rendered-description ol { margin: 0 0 0.625rem 1.5rem; }
+.pb-rendered-description ul { list-style: disc; }
+.pb-rendered-description ol { list-style: decimal; }
+.pb-rendered-description li { margin: 0.2rem 0; }
+.pb-rendered-description a { color: #624bff; text-decoration: underline; text-underline-offset: 2px; }
+.pb-rendered-description blockquote {
+  border-left: 3px solid #624bff; margin: 0 0 0.625rem; padding: 0.4rem 0 0.4rem 0.875rem;
+  background: rgb(244 246 248); color: rgb(99 115 129); font-style: italic;
+}
+.pb-rendered-description table { width: 100%; border-collapse: collapse; margin: 0 0 0.625rem; font-size: 0.8125rem; }
+.pb-rendered-description th, .pb-rendered-description td { border: 1px solid rgb(223 227 232); padding: 0.4rem 0.625rem; text-align: left; }
+.pb-rendered-description thead th { background: rgb(244 246 248); font-weight: 600; }
+.pb-rendered-description tbody tr:nth-child(even) { background: rgb(244 246 248 / 0.4); }
+.pb-rendered-description strong, .pb-rendered-description b { font-weight: 700; }
+.pb-rendered-description em, .pb-rendered-description i { font-style: italic; }
+.pb-rendered-description img { max-width: 100%; height: auto; border-radius: 0.5rem; }
+.pb-rendered-description hr { border: 0; border-top: 1px solid rgb(223 227 232); margin: 1rem 0; }
+.pb-rendered-description code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em;
+  background: rgb(244 246 248); padding: 0.1rem 0.35rem; border-radius: 0.25rem;
+}
+.pb-rendered-description pre {
+  background: rgb(244 246 248); border-radius: 0.5rem; padding: 0.75rem 1rem;
+  overflow-x: auto; margin: 0 0 0.625rem;
+}
+.pb-rendered-description pre code { background: transparent; padding: 0; }
+.pb-rendered-description h1 > img, .pb-rendered-description h2 > img { display: block; }
+
+/* ---- Dark-context variant (QuickViewModal / product page, bg #060B1E) ---- */
+.pb-rendered-description.pb-desc-dark { color: rgb(226 232 240); }
+.pb-desc-dark h1, .pb-desc-dark h2, .pb-desc-dark h3,
+.pb-desc-dark h4, .pb-desc-dark h5, .pb-desc-dark h6 { color: #ffffff; }
+.pb-desc-dark a { color: #a5b0ff; text-decoration-color: rgb(165 176 255 / 0.5); }
+.pb-desc-dark a:hover { color: #c3caff; }
+.pb-desc-dark blockquote {
+  border-left-color: #facc15;
+  background: rgb(255 255 255 / 0.05); color: rgb(203 213 225);
+}
+.pb-desc-dark table { border-collapse: collapse; }
+.pb-desc-dark th, .pb-desc-dark td { border-color: rgb(148 163 184 / 0.3); }
+.pb-desc-dark thead th { background: rgb(255 255 255 / 0.06); color: #f8fafc; }
+.pb-desc-dark tbody tr:nth-child(even) { background: rgb(255 255 255 / 0.03); }
+.pb-desc-dark hr { border-top-color: rgb(148 163 184 / 0.3); }
+.pb-desc-dark code { background: rgb(255 255 255 / 0.08); color: #e2e8f0; }
+.pb-desc-dark pre { background: rgb(255 255 255 / 0.06); color: #e2e8f0; }
+
+@media (max-width: 640px) {
+  .pb-html-editor h1, .pb-rendered-description h1 { font-size: 1.375rem; }
+  .pb-html-editor h2, .pb-rendered-description h2 { font-size: 1.125rem; }
+  .pb-html-editor h3, .pb-rendered-description h3 { font-size: 1rem; }
+  .pb-html-editor table, .pb-rendered-description table { font-size: 0.75rem; }
+  .pb-html-editor th, .pb-rendered-description th,
+  .pb-html-editor td, .pb-rendered-description td { padding: 0.35rem 0.5rem; }
+  /* Tables on mobile: let long content wrap instead of overflowing the card */
+  .pb-html-editor td, .pb-rendered-description td,
+  .pb-html-editor th, .pb-rendered-description th {
+    overflow-wrap: anywhere; word-break: break-word;
+  }
+  .pb-html-editor ul, .pb-rendered-description ul,
+  .pb-html-editor ol, .pb-rendered-description ol { margin-left: 1.25rem; }
+  .pb-html-editor img, .pb-rendered-description img { height: auto; }
+}

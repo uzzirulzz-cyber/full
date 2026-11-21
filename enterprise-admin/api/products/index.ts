@@ -1,0 +1,528 @@
+// /api/products/* — consolidated products router
+// Routes:
+//   GET  /api/products              (list with filtering & pagination)
+//   GET  /api/products/:slug        (single product by slug, sku, or id)
+//   GET  /api/products/reviews      (approved reviews for a product + summary)
+//   POST /api/products/reviews      (create review — verified purchasers only)
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { ObjectId } from "mongodb";
+import { getDb } from "../_lib/mongo.js";
+import { withReviewMetrics, approvedVerifiedReviews } from "../_lib/reviewMetrics.js";
+import { businessOrdersFilter } from "../_lib/reporting.js";
+import { formatProduct } from "../_lib/product.js";
+import { slugify } from "../_lib/config.js";
+import {
+  handleOptions,
+  jsonOk,
+  jsonError,
+  requireUser,
+  AuthenticatedRequest,
+} from "../_lib/auth.js";
+import { handleSitemapRequest } from "../_lib/sitemap.js";
+import { handlePbRender } from "../_lib/prerender.js";
+
+const REVIEW_STATUSES = new Set(["pending", "approved", "hidden"]);
+
+async function resolveProductId(db: any, ref: any): Promise<any | null> {
+  const productsCol = db.collection("products");
+  const refStr = String(ref || "").trim();
+  if (!refStr) return null;
+  let doc: any = null;
+  try {
+    doc = await productsCol.findOne({ slug: refStr });
+    if (!doc) doc = await productsCol.findOne({ sku: refStr });
+    if (!doc && ObjectId.isValid(refStr)) doc = await productsCol.findOne({ _id: new ObjectId(refStr) });
+    if (!doc) doc = await productsCol.findOne({ id: refStr });
+  } catch {
+    return null;
+  }
+  return doc || null;
+}
+
+/** Verified purchase check: a PAID order by this user containing this product. */
+async function hasVerifiedPurchase(db: any, userId: string, product: any): Promise<any | null> {
+  const ordersCol = db.collection("orders");
+  const candidates = await ordersCol
+    .find({
+      userId,
+      ...businessOrdersFilter(),
+      $or: [
+        { paymentStatus: "paid" },
+        { status: "completed", paymentStatus: { $nin: ["pending", "failed", "refunded"] } },
+      ],
+    })
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .toArray();
+  // Orders may reference the product by Mongo _id, storefront id, sku or slug
+  // (legacy flows) — accept any of them.
+  const ids = new Set(
+    [String(product._id || ""), String(product.id || ""), String(product.sku || ""), String(product.slug || "")]
+      .filter((x) => x && x !== "undefined")
+  );
+  for (const o of candidates) {
+    for (const it of o.items || []) {
+      if (ids.has(String(it.productId || ""))) return o;
+    }
+  }
+  return null;
+}
+
+async function handleReviews(req: AuthenticatedRequest, res: VercelResponse): Promise<boolean> {
+  const seg = new URL(req.url || "", "http://localhost").pathname
+    .split("/")
+    .filter(Boolean)
+    .slice(2);
+
+  // ============ GET /api/products/reviews?productId=… ============
+  if (seg[0] === "reviews" && req.method === "GET") {
+    const q = req.query as Record<string, string>;
+    const db = await getDb();
+    const product = await resolveProductId(db, q.productId || q.slug || q.id);
+    if (!product) return jsonError(res, "Product not found.", 404), true;
+    const pid = String(product._id);
+    const approved = await approvedVerifiedReviews(db, [product]);
+    const count = approved.length;
+    const avg = count ? Number((approved.reduce((sum, r) => sum + r.rating, 0) / count).toFixed(2)) : 0;
+    const distribution: Record<string, number> = { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0 };
+    for (const review of approved) distribution[String(review.rating)]++;
+    const reviews = approved.slice(0, 50);
+    jsonOk(res, {
+      success: true,
+      summary: { avg, count, distribution },
+      reviews: reviews.map((r: any) => ({
+        id: String(r._id),
+        userName: r.userName || "PlayBeat Customer",
+        rating: r.rating,
+        title: r.title || "",
+        body: r.body,
+        featured: Boolean(r.featured),
+        verifiedPurchase: true,
+        createdAt: r.createdAt,
+      })),
+    });
+    return true;
+  }
+
+  // ============ POST /api/products/reviews (signed-in, verified purchase) ============
+  if (seg[0] === "reviews" && req.method === "POST") {
+    const user = requireUser(req, res);
+    if (!user) return true;
+    const { productId, slug, rating, title, body } = req.body || {};
+    const db = await getDb();
+    const product = await resolveProductId(db, productId || slug);
+    if (!product) return jsonError(res, "Product not found.", 404), true;
+
+    const ratingNum = Number(rating);
+    if (!Number.isFinite(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+      return jsonError(res, "Rating must be between 1 and 5.", 400), true;
+    }
+    const bodyStr = String(body || "").trim();
+    if (bodyStr.length < 10) return jsonError(res, "Please write at least 10 characters about the product.", 400), true;
+    if (bodyStr.length > 2000) return jsonError(res, "Review text is too long (max 2000 characters).", 400), true;
+
+    const pid = String(product._id);
+    const order = await hasVerifiedPurchase(db, String(user.id), product);
+    if (!order) {
+      // Red line: only verified purchasers may review.
+      return jsonError(res, "Only verified purchasers can review this product. Buy it first — then share your experience.", 403), true;
+    }
+
+    const reviewsCol = db.collection("reviews");
+    const existing = await reviewsCol.findOne({ productId: pid, userId: String(user.id) });
+    if (existing) {
+      return jsonError(res, "You have already reviewed this product.", 409), true;
+    }
+
+    // Output escaping: store plain text; the storefront renders as text.
+    const doc = {
+      productId: pid,
+      productSlug: product.slug || "",
+      userId: String(user.id),
+      userEmail: String(user.email || ""),
+      userName: String(user.name || user.email || "PlayBeat Customer").slice(0, 60),
+      orderNumber: order.orderNumber,
+      rating: Math.round(ratingNum),
+      title: String(title || "").slice(0, 120),
+      body: bodyStr,
+      status: "pending", // admin moderation gate
+      featured: false,
+      createdAt: new Date(),
+    };
+    const ins = await reviewsCol.insertOne(doc);
+    jsonOk(res, {
+      success: true,
+      message: "Thank you! Your review was submitted and will appear once a moderator approves it.",
+      review: { id: String(ins.insertedId), status: doc.status },
+    }, 201);
+    return true;
+  }
+
+  return false;
+}
+
+export default async function handler(req: AuthenticatedRequest, res: VercelResponse) {
+  if (handleOptions(req, res)) return;
+
+  // ---- pbRender: server-side SEO HTML rendering ("dynamic prerender layer").
+  // vercel.json rewrites public page routes (/product/:slug, category routes,
+  // static pages, /services/*) to this function with pbRender=1&pbPath=….
+  // The renderer injects unique title/description/canonical/OG/Twitter/
+  // JSON-LD/H1/content straight from MongoDB into the raw HTML — the SPA then
+  // boots exactly as before (React replaces the injected #root content).
+  // API/data requests never carry pbRender, so they are unaffected. ----
+  const pbRenderQ = String((req.query as Record<string, string>).pbRender || "").trim();
+  if (pbRenderQ && (req.method === "GET" || req.method === "HEAD")) {
+    await handlePbRender(req, res);
+    return;
+  }
+
+  // ---- GET /api/products/images/:id — REAL product images from MongoDB ----
+  // product_images docs: { _id (24-hex STRING), filename, mime, size, bytes(binary) }.
+  // Products reference these as /api/products/images/<id>. Serving them here
+  // makes the catalog show the owner's real product imagery (per-product DB
+  // images) instead of falling back to the logo placeholder. Binary-safe,
+  // cache-immutable (image ids are content-stable), no auth (public catalog).
+  const imgSeg = new URL(req.url || "", "http://localhost").pathname
+    .split("/")
+    .filter(Boolean)
+    .slice(2);
+  // GET + HEAD: Google's Shopping image crawler sends HEAD prechecks — a 405
+  // here is recorded as an image crawl failure and gets the item disapproved.
+  if (imgSeg[0] === "images" && imgSeg[1] && (req.method === "GET" || req.method === "HEAD")) {
+    try {
+      const imageId = String(imgSeg[1]).trim();
+      if (!/^[0-9a-fA-F]{24}$/.test(imageId)) {
+        return jsonError(res, "Invalid image id.", 400);
+      }
+      const db = await getDb();
+      // _id is stored as a 24-hex STRING; tolerate ObjectId-shaped queries too
+      const imagesCol: any = db.collection("product_images");
+      let doc: any = await imagesCol.findOne({ _id: imageId });
+      if (!doc) {
+        try {
+          doc = await imagesCol.findOne({ _id: new ObjectId(imageId) });
+        } catch { /* keep null */ }
+      }
+      const bytes: Buffer | null = doc?.bytes?.buffer
+        ? Buffer.from(doc.bytes.buffer)
+        : Buffer.isBuffer(doc?.bytes)
+          ? doc.bytes
+          : null;
+      if (!doc || !bytes || !bytes.length) {
+        return jsonError(res, "Image not found.", 404);
+      }
+      // ?t=1 — the ≤600px product-card thumbnail variant (perf task §7/backfill).
+      // Served when the doc carries a generated thumb; falls back to the original
+      // bytes for assets without one (identical artwork, same URL semantics as
+      // /api/admin/media?t=1).
+      const wantThumb = new URL(req.url || "", "http://localhost").searchParams.get("t") === "1";
+      const thumbBytes: Buffer | null = doc?.thumbBytes?.buffer
+        ? Buffer.from(doc.thumbBytes.buffer)
+        : Buffer.isBuffer(doc?.thumbBytes)
+          ? doc.thumbBytes
+          : null;
+      const hasThumb = Boolean(wantThumb && thumbBytes && thumbBytes.length);
+      const serve = hasThumb ? (thumbBytes as Buffer) : bytes;
+      const serveMime = hasThumb ? String(doc.thumbMime || "image/webp") : String(doc.mime || "image/png");
+      res.status(200);
+      res.setHeader("Content-Type", serveMime);
+      res.setHeader("Content-Length", String(serve.length));
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      res.setHeader("ETag", `"${imageId}${hasThumb ? "-t" : ""}"`);
+      if (req.method === "HEAD") return res.end();
+      return res.send(serve);
+    } catch (err: any) {
+      return jsonError(res, err.message || "Image serve failed.", 500);
+    }
+  }
+
+  // Reviews sub-routes (GET public, POST signed-in)
+  const seg0 = new URL(req.url || "", "http://localhost").pathname
+    .split("/")
+    .filter(Boolean)
+    .slice(2)[0];
+  if (seg0 === "reviews") {
+    try {
+      if (await handleReviews(req, res)) return;
+    } catch (err: any) {
+      console.error("reviews route error:", err);
+      return jsonError(res, err?.message || "Review request failed.", 500);
+    }
+  }
+
+  // HEAD allowed alongside GET: Merchant Center probes feed URLs with HEAD
+  // before scheduled fetches; a 405 makes the fetch look unreachable.
+  if (req.method !== "GET" && req.method !== "HEAD")
+    return jsonError(res, "Method not allowed", 405);
+
+  try {
+    const db = await getDb();
+    const col = db.collection("products");
+
+    // ---- pbRedirect: admin redirect-manager resolution (SEO Control Center).
+    // The SPA 404 route consults this before showing "Page Not Found" — an
+    // exact source match returns the destination for a permanent client-side
+    // redirect. Never redirects to admin/private routes. ----
+    const pbRedirect = String((req.query as Record<string, string>).pbRedirect || "").trim();
+    if (pbRedirect) {
+      const doc = await db
+        .collection("seo_redirects")
+        .findOne({ source: pbRedirect, active: { $ne: false } });
+      if (doc?.destination && !doc.destination.startsWith("/admin")) {
+        return jsonOk(res, { success: true, redirectTo: doc.destination, type: doc.type || 301 });
+      }
+      return jsonOk(res, { success: true, redirectTo: null });
+    }
+
+    // ---- pbFeed=google: Google Merchant Center product feed (RSS 2.0 + g:)
+    // Every indexable product with the exact fields Merchant Center validates:
+    // title, link, description, image, price (PKR), availability, brand,
+    // identifier (SKU), condition. Draft/archived/noindex products excluded. ----
+    const pbFeed = String((req.query as Record<string, string>).pbFeed || "").toLowerCase();
+    if (pbFeed === "google") {
+      const feedDocs = await col
+        .find({ active: { $ne: false }, "seo.index": { $ne: false } })
+        .limit(1000)
+        .toArray();
+      const xmlEscape = (s: string) =>
+        String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&apos;");
+      const items = feedDocs
+        .map((d: any) => {
+          const slug = d.slug || slugify(d.name || d.sku || String(d._id));
+          const link = `https://playbeat.digital/product/${slug}`;
+          const image = d.image
+            ? d.image.startsWith("http")
+              ? d.image
+              : `https://playbeat.digital${d.image}`
+            : "";
+          const title = String(d.seo?.title || d.name || "").slice(0, 150);
+          const description = String(d.seo?.description || d.shortDescription || d.description || `${d.name} — instant delivery from PlayBeat Digital.`).slice(0, 5000);
+          const price = Number(d.price) || 0;
+          const availability = d.stock === 0 || d.status === "out_of_stock" ? "out of stock" : "in stock";
+          // Brand must be a real manufacturer/issuer brand. Several CMS
+          // products have `brand` equal to the product's own name (import
+          // artifact) — that reads as "inaccurate details" to Merchant
+          // Center, so fall back to the store brand for those.
+          const brand =
+            d.brand && String(d.brand).trim() && d.brand !== d.name
+              ? d.brand
+              : "PlayBeat Digital";
+          // Region (region-field upgrade task §27-§28): the feed must carry
+          // the EXACT normalized region stored in MongoDB — a France product
+          // must never read as Global. Region is not a first-class Merchant
+          // Center attribute, so it is emitted as a product_detail entry,
+          // which Merchant Center accepts verbatim for digital goods.
+          const region = String(d.region || "Global").trim() || "Global";
+          const regionDetail = [
+            "    <g:product_detail>",
+            "      <g:section_name>Product Highlights</g:section_name>",
+            "      <g:attribute_name>Region</g:attribute_name>",
+            `      <g:attribute_value>${xmlEscape(region)}</g:attribute_value>`,
+            "    </g:product_detail>",
+          ].join("\n");
+          return [
+            "  <item>",
+            `    <title>${xmlEscape(title)}</title>`,
+            `    <link>${xmlEscape(link)}</link>`,
+            `    <description>${xmlEscape(description)}</description>`,
+            `    <g:id>${xmlEscape(String(d.sku || d._id.toString()))}</g:id>`,
+            image ? `    <g:image_link>${xmlEscape(image)}</g:image_link>` : null,
+            `    <g:condition>new</g:condition>`,
+            `    <g:availability>${availability}</g:availability>`,
+            `    <g:brand>${xmlEscape(String(brand))}</g:brand>`,
+            price > 0 ? `    <g:price>${price.toFixed(2)} ${xmlEscape(String(d.currency || "PKR"))}</g:price>` : null,
+            // These are store-defined digital products: no real GTIN/MPN
+            // exists. Declaring `yes` and submitting the SKU as an MPN is
+            // fabricated data under Google's product-data policy — declare
+            // `no` truthfully instead. (SKU remains in g:id.)
+            `    <g:identifier_exists>no</g:identifier_exists>`,
+            regionDetail,
+            "  </item>",
+          ]
+            .filter(Boolean)
+            .join("\n");
+        })
+        .join("\n");
+      const feed = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">',
+        "  <channel>",
+        "    <title>PlayBeat Digital — Product Feed</title>",
+        "    <link>https://playbeat.digital</link>",
+        "    <description>Google Merchant Center product feed for playbeat.digital</description>",
+        items,
+        "  </channel>",
+        "</rss>",
+      ].join("\n");
+      res.status(200);
+      res.setHeader("Content-Type", "application/rss+xml; charset=utf-8");
+      // NEVER edge-cache the feed: "public, max-age" lets Vercel's CDN serve a
+      // 15-minute-stale response, hiding newly published products from the
+      // Merchant pipeline. The feed is cheap to build — always live instead.
+      res.setHeader("Cache-Control", "no-store");
+      if (req.method === "HEAD") return res.end();
+      return res.send(feed);
+    }
+
+    // Extract sub-path from req.url (Vercel rewrites /api/products/:path* → /api/products)
+    const url = new URL(req.url || '', 'http://localhost');
+    const parts = url.pathname.split('/').filter(Boolean);
+    const pathSegments = parts.slice(2);
+    const slug = pathSegments[0];
+
+    // ---- Dynamic XML sitemaps via rewrite query param (vercel.json maps
+    // /sitemap.xml → /api/products?pbSitemap=index etc.). Query params
+    // survive the rewrite; sub-path destinations do NOT (the edge strips
+    // them), which is why both entry styles are handled here. ----
+    const pbSitemap = String((req.query as Record<string, string>).pbSitemap || "").toLowerCase();
+    if (pbSitemap) {
+      const map = pbSitemap === "index" ? "sitemap.xml" : `sitemap-${pbSitemap}.xml`;
+      const handled = await handleSitemapRequest(res, map, db);
+      if (handled) return;
+    }
+
+    // ============ GET /api/products/:slug ============
+    if (slug) {
+      // ---- Dynamic XML sitemaps (served through this function so the project
+      // stays within Vercel's 12-function cap — see api/_lib/sitemap.ts) ----
+      if (slug.startsWith("sitemap")) {
+        const handled = await handleSitemapRequest(res, slug, db);
+        if (handled) return;
+      }
+
+      let productDoc: any = await col.findOne({ slug });
+      if (!productDoc) productDoc = await col.findOne({ sku: slug });
+      if (!productDoc && ObjectId.isValid(slug)) {
+        productDoc = await col.findOne({ _id: new ObjectId(slug) });
+      }
+      if (!productDoc) productDoc = await col.findOne({ id: slug });
+
+      // ---- Slug-history 301: /product/<old-slug> → canonical product URL ----
+      // When a product is renamed, the previous slug is preserved in
+      // slugHistory (maintained by PUT /api/admin/products/:id). Requests to
+      // the old URL resolve to the live product and the caller is told to
+      // redirect permanently, protecting rankings and backlinks (audit §26).
+      if (!productDoc) {
+        const relocated = await col.findOne({ slugHistory: slug }, { projection: { slug: 1 } });
+        if (relocated?.slug) {
+          return res.status(301).json({
+            success: false,
+            error: "Product moved — permanent redirect",
+            redirectTo: `/product/${relocated.slug}`,
+            canonical: `https://playbeat.digital/product/${relocated.slug}`,
+          });
+        }
+        return jsonError(res, "Product not found", 404);
+      }
+      return jsonOk(res, { success: true, product: formatProduct((await withReviewMetrics(db, [productDoc]))[0]) });
+    }
+
+    // ============ GET /api/products (list) ============
+    const {
+      category, cat, categories, search, featured, isHot, active,
+      limit = "100", page = "1", sort,
+    } = req.query as Record<string, string>;
+
+    const query: any = {};
+    if (active !== "all") query.active = { $ne: false };
+
+    // ---- Registry-driven category filter (`cat` = category slug or alias) ----
+    // Resolves through the `categories` registry (Section 3 core decision):
+    // the frontend only ever sends a slug; which product categories + tag
+    // matcher apply is decided HERE from the DB registry.
+    if (cat && cat !== "all") {
+      let entry: any = null;
+      try {
+        entry = await db.collection("categories").findOne({
+          enabled: { $ne: false },
+          $or: [{ slug: String(cat).toLowerCase() }, { aliases: String(cat).toLowerCase() }],
+        });
+      } catch { /* registry unreadable → fall back to plain category match */ }
+      if (entry) {
+        const cats: string[] = (entry.productCategories || []).map((c: string) => new RegExp(`^${c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"));
+        const conds: any[] = cats.length ? [{ $or: cats.map((re) => ({ category: re })) }] : [];
+        if (entry.tagRegex) {
+          try {
+            const re = new RegExp(String(entry.tagRegex).slice(0, 200), "i");
+            // product-level regex is evaluated post-query (small catalog)
+            const docs = await col
+              .find({ active: { $ne: false } })
+              .limit(400)
+              .toArray();
+            const matched = docs.filter((d: any) =>
+              re.test(`${d.name || ""} ${(Array.isArray(d.tags) ? d.tags : []).join(" ")} ${d.category || ""}`)
+            );
+            return jsonOk(res, {
+              success: true,
+              count: matched.length,
+              total: matched.length,
+              page: 1,
+              totalPages: 1,
+              category: entry.label,
+              products: (await withReviewMetrics(db, matched)).map(formatProduct),
+            });
+          } catch { /* bad regex → ignore matcher */ }
+        }
+        if (conds.length) query.$and = conds;
+        else if (cats.length === 0) query.category = { $regex: new RegExp(`^${String(cat).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") };
+      } else {
+        query.category = { $regex: new RegExp(`^${String(cat).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") };
+      }
+    } else if (categories) {
+      // Comma-separated exact category names (legacy helper)
+      const list = String(categories)
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean)
+        .slice(0, 10)
+        .map((c) => new RegExp(`^${c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"));
+      if (list.length) query.$or = list.map((re) => ({ category: re }));
+    } else if (category && category !== "all" && category !== "All Products") {
+      query.category = { $regex: new RegExp(`^${category}$`, "i") };
+    }
+    if (featured === "true" || featured === "1") {
+      query.$or = [{ isFeatured: true }, { featured: true }];
+    }
+    if (isHot === "true" || isHot === "1") query.isHot = true;
+    if (search && search.trim().length > 0) {
+      const searchRegex = new RegExp(search.trim().slice(0, 80), "i");
+      query.$or = [
+        { name: searchRegex }, { title: searchRegex }, { description: searchRegex },
+        { tags: searchRegex }, { sku: searchRegex },
+      ];
+    }
+
+    let sortOptions: any = { createdAt: -1 };
+    if (sort === "price-asc") sortOptions = { price: 1 };
+    if (sort === "price-desc") sortOptions = { price: -1 };
+    if (sort === "rating") sortOptions = { rating: -1 };
+    if (sort === "popular") sortOptions = { reviewCount: -1 };
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 100));
+    const skip = (pageNum - 1) * limitNum;
+
+    const [items, totalCount] = await Promise.all([
+      col.find(query).sort(sortOptions).skip(skip).limit(limitNum).toArray(),
+      col.countDocuments(query),
+    ]);
+
+    return jsonOk(res, {
+      success: true,
+      count: items.length,
+      total: totalCount,
+      page: pageNum,
+      totalPages: Math.ceil(totalCount / limitNum) || 1,
+      products: (await withReviewMetrics(db, items)).map(formatProduct),
+    });
+  } catch (err: any) {
+    console.error("GET /api/products error:", err);
+    return jsonError(res, err.message || "Failed to fetch products", 500);
+  }
+}

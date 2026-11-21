@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#030a1f" />
+    <title>Playbeat Digital — ElectronicFirst Worldwide Storefront</title>
+    <meta
+      name="description"
+      content="Playbeat Digital — ElectronicFirst Worldwide digital keys, game passes, gift cards, and software with Rapid Gateway PKR, PayPal USD, and Manual checkout."
+    />
+    <meta property="og:title" content="Playbeat Digital — ElectronicFirst Worldwide Storefront" />
+    <meta
+      property="og:description"
+      content="Genuine ElectronicFirst Worldwide digital keys with instant delivery, Rapid Gateway PKR, PayPal International, and Manual checkout."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Montserrat:ital,wght@0,500;0,600;0,700;0,800;0,900;1,800;1,900&display=swap"
+      rel="stylesheet"
+    />
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet" />
+    <!-- Google Analytics 4 (GA4) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-J3DJM463ZH"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('config', 'G-J3DJM463ZH');
+      // SPA route tracking: fire page_view on every client-side navigation
+      (function () {
+        var lastPath = null;
+        function trackSpaPage() {
+          var path = window.location.pathname + window.location.search + window.location.hash;
+          if (path === lastPath) return;
+          lastPath = path;
+          gtag('event', 'page_view', {
+            page_title: document.title,
+            page_location: window.location.href,
+            page_path: window.location.pathname + window.location.search,
+          });
+        }
+        var origPush = history.pushState;
+        history.pushState = function () {
+          origPush.apply(this, arguments);
+          trackSpaPage();
+        };
+        var origReplace = history.replaceState;
+        history.replaceState = function () {
+          origReplace.apply(this, arguments);
+          trackSpaPage();
+        };
+        window.addEventListener('popstate', trackSpaPage);
+        window.addEventListener('hashchange', trackSpaPage);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "name": "GameVault",
+  "description": "Custom digital products storefront with ElectronicFirst Worldwide catalog extraction, Manual checkout, PayPal International, and Rapid Gateway PKR integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

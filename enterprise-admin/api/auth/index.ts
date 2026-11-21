@@ -1,0 +1,1181 @@
+// /api/auth/* — consolidated auth router
+// Routes:
+//   POST /api/auth/register
+//   POST /api/auth/login
+//   POST /api/auth/social            → 410 GONE (mock sign-up disabled; real OAuth only)
+//   GET  /api/auth/me
+//   GET  /api/auth/profile        (customer profile — read)
+//   PUT  /api/auth/profile        (customer profile — set & add after sign-up; POST alias)
+//   POST /api/auth/forgot-password
+//   POST /api/auth/admin/login        (super admin env credentials OR staff account in DB)
+//   GET  /api/auth/admin/me
+//   POST /api/auth/admin/logout
+//   GET  /api/auth/oauth-config       (which social providers have OAuth keys configured)
+//   GET  /api/auth/oauth/:provider/start    (begin real OAuth flow when configured)
+//   GET  /api/auth/oauth/:provider/callback (OAuth code exchange → real account → redirect)
+//
+// Meta app-review compliance endpoints (Facebook / Instagram app console):
+//   GET  /api/auth/meta/webhook          (webhook subscribe handshake — hub.challenge echo)
+//   POST /api/auth/meta/webhook          (signed webhook event ingestion — X-Hub-Signature-256)
+//   POST /api/auth/meta/data-deletion    (data deletion request callback → {url, confirmation_code})
+//   GET  /api/auth/meta/data-deletion    (deletion status page for the confirmation URL)
+//   POST /api/auth/meta/deauthorize      (app deauthorization callback)
+//
+// REAL social sign-up/sign-in: Google, Facebook and Instagram.
+// Each provider only activates when its developer credentials are present in the
+// Vercel environment variables (see getProviderConfigs for the exact env names).
+// (TikTok OAuth was retired — requests for that provider now 404.)
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { ObjectId } from "mongodb";
+import { randomBytes, createHmac, timingSafeEqual } from "crypto";
+import { getDb } from "../_lib/mongo.js";
+import {
+  handleOptions,
+  jsonOk,
+  jsonError,
+  setCookie,
+  clearCookie,
+  parseCookies,
+  getToken,
+  hashPassword,
+  comparePassword,
+  signUserToken,
+  signAdminToken,
+  verifyUser,
+  verifyAdmin,
+  isAdminCredentials,
+  AuthenticatedRequest,
+} from "../_lib/auth.js";
+import { ADMIN_EMAIL, PUBLIC_SITE_URL } from "../_lib/config.js";
+import { clientIp, mongoRateLimit } from "../_lib/rateLimit.js";
+import { getOAuthOverrides } from "../_lib/oauthConfig.js";
+
+// ---- OAuth provider configuration (activated when env vars are set in Vercel) ----
+type ProviderConfig = {
+  authUrl: string;
+  tokenUrl: string;
+  profileUrl: string;
+  scope: string;
+  clientId?: string;
+  clientSecret?: string;
+  extraAuthParams?: Record<string, string>;            // e.g. Google prompt=select_account
+  parseProfile?: (json: any) => { id?: string; name?: string; email?: string; username?: string; emailVerified?: unknown };
+};
+
+// Provider configs = Vercel env vars overlaid with DB secrets (oauth_config
+// collection, key:"active" — DB wins when non-empty, mirroring gateway/meta
+// CAPI runtime-secret patterns). Async because the DB lookup is async; the
+// result is cached in-process for 30s inside getOAuthOverrides.
+async function getProviderConfigs(): Promise<Record<string, ProviderConfig>> {
+  let overrides: Awaited<ReturnType<typeof getOAuthOverrides>> = {};
+  try {
+    overrides = await getOAuthOverrides();
+  } catch {
+    /* env-only fallback */
+  }
+  const googleOv = overrides.google || {};
+  const facebookOv = overrides.facebook || {};
+  const instagramOv = overrides.instagram || {};
+  return {
+    google: {
+      authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+      tokenUrl: "https://oauth2.googleapis.com/token",
+      profileUrl: "https://www.googleapis.com/oauth2/v2/userinfo",
+      scope: "openid email profile",
+      extraAuthParams: { prompt: "select_account", access_type: "online", include_granted_scopes: "true" },
+      clientId: googleOv.clientId || process.env.GOOGLE_CLIENT_ID,
+      clientSecret: googleOv.clientSecret || process.env.GOOGLE_CLIENT_SECRET,
+      parseProfile: (j) => ({ id: j?.id || j?.sub, name: j?.name, email: j?.email, username: j?.email, emailVerified: j?.email_verified }),
+    },
+    facebook: {
+      authUrl: "https://www.facebook.com/v21.0/dialog/oauth",
+      tokenUrl: "https://graph.facebook.com/v21.0/oauth/access_token",
+      profileUrl: "https://graph.facebook.com/v21.0/me?fields=id,name,email",
+      scope: "email,public_profile",
+      clientId: facebookOv.clientId || process.env.FACEBOOK_CLIENT_ID,
+      clientSecret: facebookOv.clientSecret || process.env.FACEBOOK_CLIENT_SECRET,
+      parseProfile: (j) => ({ id: j?.id, name: j?.name, email: j?.email, username: j?.email }),
+    },
+    instagram: {
+      // Instagram API with FACEBOOK Login variant. The owner's Meta app
+      // (1407461764156743) migrated to this platform: the legacy
+      // api.instagram.com token endpoint now rejects it with
+      // "Invalid platform app", while the Facebook dialog + Graph token
+      // exchange and graph.instagram.com profile read are live (verified).
+      // Instagram never shares an email — upsertSocialUser builds a stable
+      // provider-scoped identity in that case, so the flow still creates
+      // one account per Instagram user.
+      authUrl: "https://www.facebook.com/v21.0/dialog/oauth",
+      tokenUrl: "https://graph.facebook.com/v21.0/oauth/access_token",
+      profileUrl: "https://graph.instagram.com/v21.0/me?fields=user_id,username",
+      scope: "instagram_business_basic",
+      clientId: process.env.INSTAGRAM_CLIENT_ID,
+      clientSecret: process.env.INSTAGRAM_CLIENT_SECRET,
+      parseProfile: (j) => ({ id: j?.user_id || j?.id, name: j?.username, username: j?.username }),
+    },
+  };
+}
+
+function getProviderLabel(provider: string): string {
+  const map: Record<string, string> = {
+    google: "Google",
+    facebook: "Facebook",
+    instagram: "Instagram",
+  };
+  return map[provider] || provider;
+}
+
+// ---- Meta (Facebook/Instagram) compliance endpoint helpers ----
+
+// Raw body capture (mirror of _lib/rapidWebhook.ts): Meta computes the
+// X-Hub-Signature-256 over the RAW request bytes, so re-serializing JSON is
+// avoided whenever possible — string body first, then the stream, and only as
+// a last resort a JSON round-trip (logged, never silently trusted).
+async function captureMetaRawBody(
+  req: VercelRequest
+): Promise<{ candidates: string[]; via: string }> {
+  if (typeof req.body === "string" && req.body.length > 0) {
+    return { candidates: [req.body], via: "body-string" };
+  }
+  try {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req as unknown as AsyncIterable<unknown>) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+    }
+    if (chunks.length) {
+      return { candidates: [Buffer.concat(chunks).toString("utf8")], via: "stream" };
+    }
+  } catch {
+    /* stream already consumed by an eager parser — fall through */
+  }
+  if (req.body && typeof req.body === "object") {
+    return { candidates: [JSON.stringify(req.body)], via: "re-serialize" };
+  }
+  return { candidates: [], via: "empty" };
+}
+
+// Every configured provider app secret — webhook deliveries and signed_request
+// callbacks may be issued by the Facebook app, the Instagram app, or the
+// WhatsApp Business app (WHATSAPP_APP_SECRET, e.g. the PlaybeatLive app whose
+// Cloud API webhooks sign with its own secret).
+function metaAppSecrets(): string[] {
+  return [
+    process.env.FACEBOOK_CLIENT_SECRET,
+    process.env.INSTAGRAM_CLIENT_SECRET,
+    process.env.WHATSAPP_APP_SECRET,
+    // MyPlaybeat (1095332246787379) app secret — provisioned in Vercel for the
+    // data-deletion callback (/api/contact?metaDeletion=1 reads the same var).
+    // Without it the deauthorize + webhook + data-deletion routes 503.
+    process.env.META_APP_SECRET,
+  ].filter(Boolean) as string[];
+}
+
+// X-Hub-Signature-256: "sha256=" + hex(HMAC-SHA256(appSecret, rawBody)).
+function verifyHubSignature(rawBody: string, signatureHeader: string, secrets: string[]): boolean {
+  if (!rawBody || !signatureHeader || !secrets.length) return false;
+  const provided = Buffer.from(String(signatureHeader).trim());
+  for (const secret of secrets) {
+    const expected = Buffer.from(
+      "sha256=" + createHmac("sha256", secret).update(rawBody).digest("hex")
+    );
+    if (provided.length === expected.length && timingSafeEqual(provided, expected)) return true;
+  }
+  return false;
+}
+
+// Meta signed_request (data-deletion / deauthorize callbacks):
+//   <base64url(HMAC-SHA256(secret, payload))>.<base64url(payload JSON)>
+function parseSignedRequest(raw: string, secrets: string[]): any | null {
+  const parts = String(raw || ".").split(".");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  const b64url = (s: string) =>
+    Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+  const sig = b64url(parts[0]);
+  const payload = b64url(parts[1]);
+  if (!sig.length || !payload.length) return null;
+  for (const secret of secrets) {
+    const expected = createHmac("sha256", secret).update(payload).digest();
+    if (sig.length === expected.length && timingSafeEqual(sig, expected)) {
+      try {
+        return JSON.parse(payload.toString("utf8"));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+// Form field extraction that works whether the runtime pre-parsed the
+// urlencoded body into an object or left it as a raw string.
+function extractFormField(req: VercelRequest, field: string): string {
+  const body: any = req.body;
+  if (body && typeof body === "object" && typeof body[field] === "string") {
+    return body[field];
+  }
+  if (typeof body === "string" && body.length) {
+    try {
+      return new URLSearchParams(body).get(field) || "";
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
+async function upsertSocialUser(
+  db: any,
+  provider: string,
+  profile: { id?: string; name?: string; email?: string; username?: string }
+) {
+  const usersCol = db.collection("users");
+  const label = getProviderLabel(provider);
+  let email = (profile.email || "").toLowerCase().trim();
+  if (!email) {
+    // Provider did not share an email — build a stable provider-scoped identity
+    const handle = profile.username || profile.name || profile.id || Date.now().toString();
+    email = `${provider}.${String(handle).toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24) || Date.now().toString().slice(-6)}@users.playbeat.digital`;
+  }
+  if (email === ADMIN_EMAIL.toLowerCase()) {
+    throw new Error("This email is reserved and cannot be claimed.");
+  }
+
+  // 1) Returning social user — match on the provider identity first (stable
+  //    even if the display name/username changes), then fall back to email.
+  let user: any = null;
+  if (profile.id) {
+    user = await usersCol.findOne({ provider: label, providerId: String(profile.id) });
+  }
+  if (!user) {
+    user = await usersCol.findOne({ email });
+    // Link the social identity onto an existing account (e.g. previously
+    // registered by email with the same address) and remember the provider id.
+    if (user && profile.id) {
+      await usersCol.updateOne(
+        { _id: user._id },
+        { $set: { provider: label, providerId: String(profile.id), updatedAt: new Date() } }
+      );
+      user = { ...user, provider: label, providerId: String(profile.id) };
+    }
+  }
+
+  // 2) First-time sign-up — create the real account record.
+  if (!user) {
+    const newUserDoc = {
+      name: profile.name || profile.username || `${label} Member`,
+      email,
+      provider: label,
+      providerId: profile.id ? String(profile.id) : null,
+      role: "user",
+      createdAt: new Date(),
+    };
+    const insertRes = await usersCol.insertOne(newUserDoc);
+    user = { _id: insertRes.insertedId, ...newUserDoc };
+    await db.collection("analytics_events").insertOne({
+      type: "signup",
+      path: "/storefront",
+      sessionId: `signup-${provider}`,
+      referrer: `provider:${label}`,
+      createdAt: new Date(),
+    });
+  }
+  return user;
+}
+
+// ============================================================
+// Customer profile — set & add AFTER signing up
+// ============================================================
+// Stored on the user document as `profile: { phone, city, address,
+// updatedAt, completedAt }`. Customers register with just name/email/
+// password; the storefront then invites them to complete their profile
+// (phone + city + delivery address) from /account. "Complete" means all
+// three present — the nudge disappears once they are.
+type ProfileDoc = {
+  phone: string;
+  city: string;
+  address: string;
+  updatedAt?: Date;
+  completedAt?: Date | null;
+};
+
+function normalizeProfileDoc(raw: any): ProfileDoc {
+  const p = raw && typeof raw === "object" ? raw : {};
+  return {
+    phone: typeof p.phone === "string" ? p.phone : "",
+    city: typeof p.city === "string" ? p.city : "",
+    address: typeof p.address === "string" ? p.address : "",
+    updatedAt: p.updatedAt instanceof Date ? p.updatedAt : undefined,
+    completedAt: p.completedAt instanceof Date ? p.completedAt : null,
+  };
+}
+
+function isProfileComplete(p: ProfileDoc): boolean {
+  return Boolean(p.phone && p.city && p.address);
+}
+
+// Same phone shape the orders API accepts (digits, spaces, dashes).
+const PROFILE_PHONE_RE = /^\+?[\d\s-]{7,20}$/;
+
+export const config = { maxDuration: 60 };
+export default async function handler(req: AuthenticatedRequest, res: VercelResponse) {
+  if (req.query.streamingCustomer === "1") {
+    const {default: streaming} = await import("../_lib/streamingCustomer.js");
+    return streaming(req, res);
+  }
+  // Keep mobile organization routes in this existing function (Hobby function quota).
+  if (req.query.organization === "1" || new URL(req.url || "/", "http://localhost").pathname === "/api/organization") {
+    const { default: organization } = await import("../_lib/organization.js");
+    return organization(req, res);
+  }
+  if (handleOptions(req, res)) return;
+
+  // The catch-all param is `path` (an array). Vercel passes it as req.query.path
+  // Extract sub-path from req.url (Vercel rewrites /api/auth/:path* → /api/auth)
+  // So we parse the ORIGINAL path from req.url to get the sub-route
+  const url = new URL(req.url || '', 'http://localhost');
+  const parts = url.pathname.split('/').filter(Boolean);
+  // Drop the first 2 segments ("api", "auth" or "products" etc.)
+  const pathSegments = parts.slice(2);
+  const route = pathSegments.join("/").toLowerCase();
+
+  // ============ /api/auth/register ============
+  if (route === "register" && req.method === "POST") {
+    try {
+      // Abuse damping: max 5 registrations per minute per IP (Mongo-backed,
+      // shared across serverless instances; fails open on DB errors).
+      const rl = await mongoRateLimit(await getDb(), `register:${clientIp(req as any)}`, 5, 60);
+      if (!rl.allowed) {
+        return jsonError(res, `Too many registration attempts — try again in ${rl.retryAfterSec}s.`, 429);
+      }
+      const { name, email, password } = req.body || {};
+      if (!name || !email || !password) {
+        return jsonError(res, "Name, email, and password are required.", 400);
+      }
+      if (password.length < 6) {
+        return jsonError(res, "Password must be at least 6 characters long.", 400);
+      }
+      if (email.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim()) {
+        return jsonError(res, "This email is reserved and cannot be registered.", 403);
+      }
+      const db = await getDb();
+      const usersCol = db.collection("users");
+      const existing = await usersCol.findOne({ email: email.toLowerCase().trim() });
+      if (existing) {
+        return jsonError(res, "An account with this email already exists.", 409);
+      }
+      const hashedPassword = await hashPassword(password);
+      const newUserDoc = {
+        name: name.trim(),
+        email: email.toLowerCase().trim(),
+        password: hashedPassword,
+        role: "user",
+        provider: "local",
+        createdAt: new Date(),
+      };
+      const result = await usersCol.insertOne(newUserDoc);
+      const userId = result.insertedId.toString();
+      const token = signUserToken({ id: userId, email: newUserDoc.email, role: "user" });
+      setCookie(res, "token", token, { maxAge: 30 * 24 * 60 * 60 });
+      return jsonOk(res, {
+        success: true,
+        message: "Account registered successfully",
+        token,
+        user: { id: userId, name: newUserDoc.name, email: newUserDoc.email, role: "user" },
+      }, 201);
+    } catch (err: any) {
+      console.error("Register Error:", err);
+      return jsonError(res, err.message || "Failed to register account", 500);
+    }
+  }
+
+  // ============ /api/auth/login ============
+  if (route === "login" && req.method === "POST") {
+    try {
+      const { email, password } = req.body || {};
+      if (!email || !password) {
+        return jsonError(res, "Email and password are required.", 400);
+      }
+      // Brute-force damping: max 10 login attempts per minute per IP (the
+      // target email is part of the key so one attacker cannot lock out
+      // everyone sharing their NAT IP). Mongo-backed, fails open.
+      const loginRl = await mongoRateLimit(
+        await getDb(),
+        `login:${clientIp(req as any)}:${String(email).toLowerCase().trim()}`,
+        10,
+        60
+      );
+      if (!loginRl.allowed) {
+        return jsonError(res, `Too many login attempts — try again in ${loginRl.retryAfterSec}s.`, 429);
+      }
+      if (email.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim()) {
+        return jsonError(
+          res,
+          "This account is restricted. Administrative access is via the dedicated admin login only.",
+          403
+        );
+      }
+      const db = await getDb();
+      const usersCol = db.collection("users");
+      const user = await usersCol.findOne({ email: email.toLowerCase().trim() });
+      if (!user || !user.password) {
+        return jsonError(res, "Invalid email or password.", 401);
+      }
+      const isMatch = await comparePassword(password, user.password);
+      if (!isMatch) {
+        return jsonError(res, "Invalid email or password.", 401);
+      }
+      const token = signUserToken({
+        id: user._id.toString(),
+        email: user.email,
+        role: user.role || "user",
+      });
+      setCookie(res, "token", token, { maxAge: 30 * 24 * 60 * 60 });
+      return jsonOk(res, {
+        success: true,
+        token,
+        user: {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          role: user.role || "user",
+        },
+      });
+    } catch (err: any) {
+      console.error("Login Error:", err);
+      return jsonError(res, err.message || "Login failed", 500);
+    }
+  }
+
+  // ============ /api/auth/social ============
+  // DISABLED — this endpoint previously created accounts from CLIENT-SUPPLIED
+  // name/email (mock sign-up, no proof the caller owned the identity). It is
+  // now permanently rejected. Real social sign-up uses the OAuth flow:
+  //   GET /api/auth/oauth/:provider/start  → provider consent → callback →
+  //   real profile fetched server-side from the provider → account created.
+  if (route === "social" && req.method === "POST") {
+    return jsonError(
+      res,
+      "Mock social sign-up has been disabled. Sign up with Google or Facebook via the secure OAuth button, or use email registration.",
+      410
+    );
+  }
+
+  // ============ /api/auth/me ============
+  if (route === "me" && req.method === "GET") {
+    try {
+      const decoded = verifyUser(req);
+      if (!decoded) return jsonError(res, "Authentication required", 401);
+      const db = await getDb();
+      const usersCol = db.collection("users");
+      const user = await usersCol.findOne({ _id: new ObjectId(decoded.id) });
+      if (!user) return jsonError(res, "User not found", 404);
+      // If the session was verified via the httpOnly cookie (e.g. right after an
+      // OAuth redirect), echo the token so the SPA can also make Bearer calls.
+      // The token belongs to the caller only — safe to return to the verified party.
+      const cameFromCookie = !req.headers?.authorization?.startsWith("Bearer ");
+      const profile = normalizeProfileDoc(user.profile);
+      return jsonOk(res, {
+        success: true,
+        ...(cameFromCookie ? { token: getToken(req, "token") } : {}),
+        user: {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          role: user.role || "user",
+          provider: user.provider || "local",
+          // Top-level phone so checkout contact prefill reads it directly
+          phone: profile.phone || undefined,
+          profile,
+          profileComplete: isProfileComplete(profile),
+        },
+      });
+    } catch (err: any) {
+      return jsonError(res, err.message, 500);
+    }
+  }
+
+  // ============ /api/auth/profile — GET read · PUT/POST update ============
+  // Customers set & add profile details after signing up: display name,
+  // phone, city and delivery address. Powers the /account "Profile
+  // Details" card and pre-fills checkout contact fields.
+  if (
+    route === "profile" &&
+    (req.method === "GET" || req.method === "PUT" || req.method === "POST")
+  ) {
+    try {
+      const decoded = verifyUser(req);
+      if (!decoded) return jsonError(res, "Authentication required", 401);
+      const db = await getDb();
+      const usersCol = db.collection("users");
+      const user = await usersCol.findOne({ _id: new ObjectId(decoded.id) });
+      if (!user) return jsonError(res, "User not found", 404);
+
+      if (req.method === "GET") {
+        const profile = normalizeProfileDoc(user.profile);
+        return jsonOk(res, {
+          success: true,
+          profile,
+          profileComplete: isProfileComplete(profile),
+        });
+      }
+
+      // --- mutation (PUT / POST) — light per-user abuse damping ---
+      const rl = await mongoRateLimit(await getDb(), `profile:${decoded.id}`, 20, 60);
+      if (!rl.allowed) {
+        return jsonError(res, `Too many profile updates — try again in ${rl.retryAfterSec}s.`, 429);
+      }
+
+      const body: any = req.body || {};
+      const $set: Record<string, any> = {};
+
+      // Display name (top-level — the whole storefront reads user.name)
+      if (typeof body.name === "string" && body.name.trim()) {
+        $set.name = body.name.trim().slice(0, 80);
+      }
+
+      // Profile fields — non-empty strings set, empty string clears.
+      const incoming = {
+        phone: typeof body.phone === "string" ? body.phone.trim().slice(0, 24) : undefined,
+        city: typeof body.city === "string" ? body.city.trim().slice(0, 80) : undefined,
+        address: typeof body.address === "string" ? body.address.trim().slice(0, 240) : undefined,
+      };
+      if (incoming.phone !== undefined) {
+        if (incoming.phone && !PROFILE_PHONE_RE.test(incoming.phone)) {
+          return jsonError(
+            res,
+            "Phone number looks invalid — use 7–20 characters (digits, spaces or dashes).",
+            400
+          );
+        }
+        $set["profile.phone"] = incoming.phone;
+      }
+      if (incoming.city !== undefined) $set["profile.city"] = incoming.city;
+      if (incoming.address !== undefined) $set["profile.address"] = incoming.address;
+
+      if (!Object.keys($set).length) {
+        return jsonError(res, "Nothing to update — send name, phone, city, or address.", 400);
+      }
+
+      // Completeness is computed AFTER the merge so completedAt flips on the
+      // first save that satisfies it (and never regresses once set).
+      const merged = { ...normalizeProfileDoc(user.profile) };
+      if ($set["profile.phone"] !== undefined) merged.phone = $set["profile.phone"];
+      if ($set["profile.city"] !== undefined) merged.city = $set["profile.city"];
+      if ($set["profile.address"] !== undefined) merged.address = $set["profile.address"];
+      $set["profile.updatedAt"] = new Date();
+      if (isProfileComplete(merged) && !user.profile?.completedAt) {
+        $set["profile.completedAt"] = new Date();
+      }
+      $set.updatedAt = new Date();
+
+      await usersCol.updateOne({ _id: user._id }, { $set });
+      const fresh = await usersCol.findOne({ _id: user._id });
+      const profile = normalizeProfileDoc(fresh?.profile);
+      return jsonOk(res, {
+        success: true,
+        message: "Profile saved",
+        profile,
+        profileComplete: isProfileComplete(profile),
+        user: {
+          id: user._id.toString(),
+          name: fresh?.name || user.name,
+          email: fresh?.email || user.email,
+        },
+      });
+    } catch (err: any) {
+      console.error("Profile Error:", err);
+      return jsonError(res, err.message || "Failed to save profile", 500);
+    }
+  }
+
+  // ============ /api/auth/forgot-password ============
+  if (route === "forgot-password" && req.method === "POST") {
+    const { email } = req.body || {};
+    if (!email) return jsonError(res, "Email is required.", 400);
+    return jsonOk(res, {
+      success: true,
+      message: "If an account exists with this email, a password reset link has been dispatched.",
+    });
+  }
+
+  if (route === "admin/shared-pin" && req.method === "POST") {
+    res.setHeader("Cache-Control", "no-store");
+    const supplied=String(req.body?.pin||"");
+    try {
+      const db=await getDb();
+      const gate=await mongoRateLimit(db,"shared-pin:"+clientIp(req as any),5,900);
+      if(!gate.allowed)return jsonError(res,"Too many attempts. Please wait.",429);
+      const expected=String(process.env.PLAYBEAT_SHARED_PIN||"");
+      const a=Buffer.from(supplied),b=Buffer.from(expected);
+      if(!/^\d{6}$/.test(supplied)||!b.length||a.length!==b.length||!timingSafeEqual(a,b))return jsonError(res,"Incorrect PIN.",401);
+      const admin={email:"gateway-operator@playbeat.digital",name:"Gateway Operator",role:"admin"};
+      const token=signAdminToken(admin);
+      setCookie(res,"adminToken",token,{maxAge:12*60*60});
+      return jsonOk(res,{success:true,token,admin});
+    }catch{return jsonError(res,"Authentication unavailable.",503);}
+  }
+
+  if (route === "admin/executive-pin" && req.method === "POST") {
+    res.setHeader("Cache-Control", "no-store");
+    const profiles: Record<string, string> = { qazi: "QAZI", creed: "CREED", mahbuba: "MAHBUBA" };
+    const id = String(req.body?.profile || "").toLowerCase().trim();
+    const supplied = String(req.body?.pin || "");
+    const suffix = profiles[id];
+    if (!suffix || !/^\d{5}$/.test(supplied)) return jsonError(res, "Invalid profile or PIN.", 401);
+    try {
+      const db = await getDb();
+      const gate = await mongoRateLimit(db, "admin-exec:" + id + ":" + clientIp(req as any), 5, 900);
+      if (!gate.allowed) return jsonError(res, "Too many attempts. Try again later.", 429);
+      const expected = String(process.env["EXEC_PIN_" + suffix] || "");
+      const aa = Buffer.from(supplied);
+      const bb = Buffer.from(expected);
+      if (aa.length !== bb.length || !timingSafeEqual(aa, bb)) return jsonError(res, "Invalid profile or PIN.", 401);
+      const email = "executive-" + id + "@playbeat.digital";
+      const name = id === "qazi" ? "Qazi" : id === "creed" ? "Creed" : "Mahbuba";
+      const token = signAdminToken({ email, name });
+      setCookie(res, "adminToken", token, { maxAge: 12 * 60 * 60 });
+      return jsonOk(res, { success: true, token, admin: { email, name, role: "admin" } });
+    } catch { return jsonError(res, "Authentication unavailable.", 503); }
+  }
+
+  // ============ /api/auth/admin/login ============
+  // Accepts EITHER the super administrator env credentials OR an employee/staff
+  // account created by the super admin in the admin panel (bcrypt-verified).
+  // A DB password override (set via Admin Profile Settings) takes precedence for
+  // the super administrator so password changes take real effect.
+  if (route === "admin/login" && req.method === "POST") {
+    try {
+      const { username, email, password } = req.body || {};
+      const usingUsername = typeof username === "string" && username.trim().length > 0;
+      const identifier = String(usingUsername ? username : email || "").trim();
+      if (!identifier || !password) {
+        return jsonError(res, "Admin username and password are required.", 400);
+      }
+      // Username "admin" resolves only to the configured super-admin identity.
+      // Staff accounts continue to authenticate with their own email addresses.
+      const cleanEmail = usingUsername
+        ? ADMIN_EMAIL.toLowerCase().trim()
+        : String(email).toLowerCase().trim();
+      const db = await getDb();
+      const profilesCol = db.collection("admin_profiles");
+      const activityCol = db.collection("admin_activity");
+      const profileDoc: any = await profilesCol.findOne({ email: cleanEmail });
+
+      // 1) Super administrator via DB password override or environment credentials
+      const superAdminMatch = profileDoc?.passwordOverride
+        ? await comparePassword(String(password), profileDoc.passwordOverride)
+        : isAdminCredentials(identifier, String(password));
+      if (profileDoc?.passwordOverride || isAdminCredentials(identifier, String(password))) {
+        if (!superAdminMatch) {
+          return jsonError(res, "Invalid administrative credentials.", 401);
+        }
+        const displayName = profileDoc?.name || "PlayBeat Super Administrator";
+        const adminToken = signAdminToken({
+          email: ADMIN_EMAIL,
+          name: displayName,
+        });
+        setCookie(res, "adminToken", adminToken, { maxAge: 7 * 24 * 60 * 60 });
+        // Track last login (profile override doc + activity feed)
+        try {
+          await profilesCol.updateOne(
+            { email: cleanEmail },
+            { $set: { email: cleanEmail, lastLoginAt: new Date(), updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } },
+            { upsert: true }
+          );
+          await activityCol.insertOne({
+            type: "login",
+            adminEmail: cleanEmail,
+            adminName: displayName,
+            role: "admin",
+            detail: "Signed in to the admin dashboard",
+            meta: { method: profileDoc?.passwordOverride ? "database password" : "platform credentials" },
+            createdAt: new Date(),
+          });
+        } catch { /* activity tracking must never block login */ }
+        return jsonOk(res, {
+          success: true,
+          token: adminToken,
+          admin: {
+            email: ADMIN_EMAIL,
+            name: displayName,
+            role: "admin",
+          },
+        });
+      }
+
+      // 2) Staff / employee account created via admin panel
+      const usersCol = db.collection("users");
+      const staffUser: any = await usersCol.findOne({
+        email: cleanEmail,
+        role: { $in: ["staff", "admin"] },
+      });
+      if (staffUser) {
+        if (staffUser.active === false) {
+          return jsonError(res, "This staff account has been deactivated. Contact your administrator.", 403);
+        }
+        if (!staffUser.password) {
+          return jsonError(res, "Invalid administrative credentials.", 401);
+        }
+        const ok = await comparePassword(password, staffUser.password);
+        if (!ok) {
+          return jsonError(res, "Invalid administrative credentials.", 401);
+        }
+        // Staff/employee token: signed JWT carrying their real role ("staff")
+        // plus the Power Authority level (admin | manager | supervisor) and the
+        // granular permission list. verifyAdmin() accepts roles admin|staff;
+        // authority-restricted routes check authority via requireAuthority().
+        const staffToken = signUserToken({
+          id: staffUser._id.toString(),
+          email: staffUser.email,
+          role: staffUser.role,
+          authority: staffUser.authority || (staffUser.role === "admin" ? "admin" : "supervisor"),
+          permissions: Array.isArray(staffUser.permissions) ? staffUser.permissions : [],
+        });
+        setCookie(res, "adminToken", staffToken, { maxAge: 7 * 24 * 60 * 60 });
+        // Track last login (users doc + activity feed)
+        try {
+          await usersCol.updateOne(
+            { _id: staffUser._id },
+            { $set: { lastLoginAt: new Date(), updatedAt: new Date() } }
+          );
+          await activityCol.insertOne({
+            type: "login",
+            adminEmail: staffUser.email.toLowerCase(),
+            adminName: staffUser.name,
+            role: staffUser.role,
+            detail: "Signed in to the admin dashboard",
+            meta: { method: "staff account" },
+            createdAt: new Date(),
+          });
+        } catch { /* activity tracking must never block login */ }
+        return jsonOk(res, {
+          success: true,
+          token: staffToken,
+          admin: {
+            id: staffUser._id.toString(),
+            email: staffUser.email,
+            name: staffUser.name,
+            role: staffUser.role,
+            authority: staffUser.authority || (staffUser.role === "admin" ? "admin" : "supervisor"),
+            permissions: Array.isArray(staffUser.permissions) ? staffUser.permissions : [],
+            staffId: staffUser.staffId || null,
+            department: staffUser.department || null,
+          },
+        });
+      }
+
+      return jsonError(res, "Invalid administrative credentials.", 401);
+    } catch (err: any) {
+      return jsonError(res, err.message, 500);
+    }
+  }
+
+  // ============ /api/auth/admin/me ============
+  if (route === "admin/me" && req.method === "GET") {
+    const admin = verifyAdmin(req);
+    if (!admin) return jsonError(res, "Admin authentication required", 401);
+    // If the session was verified via the httpOnly adminToken cookie (e.g. right
+    // after a Google OAuth redirect), echo the token so the SPA can also make
+    // Bearer calls. The token belongs to the caller only — safe to return.
+    const cameFromCookie = !req.headers?.authorization?.startsWith("Bearer ");
+    return jsonOk(res, {
+      success: true,
+      ...(cameFromCookie ? { token: getToken(req, "adminToken") } : {}),
+      admin: {
+        email: admin.email,
+        name: admin.name,
+        role: admin.role,
+        authority: admin.role === "admin" ? "super_admin" : admin.authority || "supervisor",
+        permissions: Array.isArray(admin.permissions) ? admin.permissions : [],
+        id: admin.id || null,
+        staffId: admin.staffId || null,
+      },
+    });
+  }
+
+  // ============ /api/auth/oauth-config ============
+  if (route === "oauth-config" && req.method === "GET") {
+    const cfgs = await getProviderConfigs();
+    return jsonOk(res, {
+      success: true,
+      providers: {
+        Google: Boolean(cfgs.google.clientId && cfgs.google.clientSecret),
+        Facebook: Boolean(cfgs.facebook.clientId && cfgs.facebook.clientSecret),
+        Instagram: Boolean(cfgs.instagram.clientId && cfgs.instagram.clientSecret),
+      },
+    });
+  }
+
+  // ============ /api/auth/oauth/:provider/start ============
+  // ?mobile=1 → the native app (Expo) is driving the flow via the system
+  // browser; the callback then redirects to the playbeat:// deep link with
+  // the session JWT instead of the storefront. The marker travels inside
+  // the signed state value (".m" suffix), which the provider echoes back.
+  if (pathSegments[0] === "oauth" && pathSegments[2] === "start" && req.method === "GET") {
+    const provider = (pathSegments[1] || "").toLowerCase();
+    const isMobile = String(url.searchParams.get("mobile") || "") === "1";
+    const cfg = (await getProviderConfigs())[provider];
+    if (!cfg) return jsonError(res, `Unknown provider: ${provider}`, 404);
+    if (!cfg.clientId || !cfg.clientSecret) {
+      if (isMobile) {
+        return jsonError(
+          res,
+          `${getProviderLabel(provider)} sign-in is being activated — its OAuth keys are not configured yet. Please use email registration meanwhile.`,
+          503
+        );
+      }
+      return res.status(302).redirect(
+        `/?social_error=${encodeURIComponent(
+          `${getProviderLabel(provider)} sign-in is being activated — its OAuth keys are not configured yet. Please use email registration meanwhile.`
+        )}`
+      );
+    }
+    const redirectUri = `${PUBLIC_SITE_URL.replace(/\/$/, "")}/api/auth/oauth/${provider}/callback`;
+    // CSRF protection: random single-use state stored in a short-lived httpOnly
+    // cookie; the callback must receive the identical value back from the provider.
+    const state = `${provider}.${Date.now()}.${randomBytes(16).toString("hex")}${isMobile ? ".m" : ""}`;
+    setCookie(res, "oauth_state", state, { maxAge: 600, httpOnly: true, sameSite: "lax" });
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: cfg.clientId,
+      redirect_uri: redirectUri,
+      scope: cfg.scope,
+      state,
+      ...(cfg.extraAuthParams || {}),
+    });
+    return res.status(302).redirect(`${cfg.authUrl}?${params.toString()}`);
+  }
+
+  // ============ /api/auth/oauth/:provider/callback ============
+  if (pathSegments[0] === "oauth" && pathSegments[2] === "callback" && req.method === "GET") {
+    const provider = (pathSegments[1] || "").toLowerCase();
+    const cfg = (await getProviderConfigs())[provider];
+    const code = url.searchParams.get("code");
+    const qErr = url.searchParams.get("error_description") || url.searchParams.get("error");
+    const base = PUBLIC_SITE_URL.replace(/\/$/, "");
+    if (qErr) return res.status(302).redirect(`${base}/?social_error=${encodeURIComponent(qErr)}`);
+    if (!cfg || !cfg.clientId || !cfg.clientSecret) {
+      return res.status(302).redirect(`${base}/?social_error=${encodeURIComponent("Provider not configured")}`);
+    }
+    if (!code) return res.status(302).redirect(`${base}/?social_error=${encodeURIComponent("Missing OAuth code")}`);
+
+    // CSRF check: the state we set in the start-step cookie must match the state
+    // the provider echoed back (defends against forged authorization callbacks).
+    const stateCookie = parseCookies(req)["oauth_state"];
+    const stateQuery = url.searchParams.get("state");
+    if (!stateCookie || !stateQuery || stateCookie !== stateQuery) {
+      clearCookie(res, "oauth_state");
+      if (stateQuery?.endsWith(".m")) {
+        return res.status(302).redirect(`playbeat://oauth/callback?error=${encodeURIComponent("Sign-in session expired or invalid (state mismatch). Please try again.")}`);
+      }
+      return res.status(302).redirect(
+        `${base}/?social_error=${encodeURIComponent("Sign-in session expired or invalid (state mismatch). Please try again.")}`
+      );
+    }
+    clearCookie(res, "oauth_state");
+    const isMobileFlow = stateQuery.endsWith(".m");
+
+    try {
+      const redirectUri = `${base}/api/auth/oauth/${provider}/callback`;
+      // Standard OAuth code exchange (client_id + client_secret in the body).
+      const tokenBody: Record<string, string> = {
+        grant_type: "authorization_code",
+        client_id: cfg.clientId!,
+        client_secret: cfg.clientSecret!,
+        code,
+        redirect_uri: redirectUri,
+      };
+      const tokenRes = await fetch(cfg.tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        body: new URLSearchParams(tokenBody),
+      });
+      const tokenJson: any = await tokenRes.json();
+      const accessToken = tokenJson.access_token || tokenJson.data?.access_token || tokenJson.data?.token;
+      if (!accessToken) {
+        // Graph errors nest the message inside an object: {error:{message,…}}
+        // — extract it so users never see a useless "[object Object]".
+        throw new Error(
+          tokenJson.error_description ||
+            tokenJson.error?.description ||
+            tokenJson.error?.message ||
+            tokenJson.error_message ||
+            (typeof tokenJson.error === "string" ? tokenJson.error : "") ||
+            "Token exchange failed"
+        );
+      }
+
+      // Profile fetch — Bearer-header authenticated userinfo call.
+      const profRes = await fetch(cfg.profileUrl, {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      });
+      const profJson: any = await profRes.json();
+      const extracted = cfg.parseProfile
+        ? cfg.parseProfile(profJson)
+        : {
+            id: profJson.id || profJson.sub || profJson.open_id,
+            name: profJson.name || profJson.display_name || profJson.username,
+            email: profJson.email,
+            username: profJson.username,
+            emailVerified: undefined as unknown,
+          };
+
+      const db = await getDb();
+
+      // ---- Admin / staff Google sign-in branch ----
+      // The super admin email is reserved from CUSTOMER social sign-up
+      // (upsertSocialUser refuses it), but authorized personnel can sign in to
+      // the admin console with Google when the Google account's verified email
+      // matches the super admin identity or an active staff/admin account.
+      // Everyone else falls through to the normal customer social flow.
+      const googleEmail = String(extracted.email || "").toLowerCase().trim();
+      const emailVerifiedOk = extracted.emailVerified !== false; // Google email_verified
+      const isSuperAdminEmail = provider === "google" && emailVerifiedOk && googleEmail === ADMIN_EMAIL.toLowerCase();
+      let staffAdminUser: any = null;
+      if (provider === "google" && emailVerifiedOk && googleEmail && !isSuperAdminEmail) {
+        staffAdminUser = await db.collection("users").findOne({
+          email: googleEmail,
+          role: { $in: ["staff", "admin"] },
+          active: { $ne: false },
+        });
+      }
+      if (isSuperAdminEmail || staffAdminUser) {
+        const identity = { provider: getProviderLabel(provider), providerId: String(extracted.id || ""), updatedAt: new Date() };
+        let adminName: string;
+        let adminToken: string;
+        if (isSuperAdminEmail) {
+          // Link the Google identity onto the super admin record + profile doc
+          try {
+            await db.collection("users").updateOne(
+              { email: googleEmail },
+              { $set: identity, $setOnInsert: { name: "PlayBeat Super Administrator", role: "super_admin", createdAt: new Date() } },
+              { upsert: true }
+            );
+            await db.collection("admin_profiles").updateOne(
+              { email: googleEmail },
+              { $set: { ...identity, email: googleEmail }, $setOnInsert: { createdAt: new Date() } },
+              { upsert: true }
+            );
+          } catch { /* identity linking is best-effort */ }
+          adminName = "PlayBeat Super Administrator";
+          adminToken = signAdminToken({ email: ADMIN_EMAIL, name: adminName });
+        } else {
+          await db.collection("users").updateOne({ _id: staffAdminUser._id }, { $set: identity });
+          adminName = staffAdminUser.name;
+          adminToken = signUserToken({
+            id: staffAdminUser._id.toString(),
+            email: staffAdminUser.email,
+            role: staffAdminUser.role,
+            authority: staffAdminUser.authority || (staffAdminUser.role === "admin" ? "admin" : "supervisor"),
+            permissions: Array.isArray(staffAdminUser.permissions) ? staffAdminUser.permissions : [],
+          });
+        }
+        try {
+          await db.collection("admin_activity").insertOne({
+            type: "login",
+            adminEmail: googleEmail,
+            adminName,
+            role: isSuperAdminEmail ? "admin" : staffAdminUser.role,
+            detail: "Signed in to the admin dashboard via Google OAuth",
+            meta: { method: "google-oauth" },
+            createdAt: new Date(),
+          });
+        } catch { /* activity tracking must never block login */ }
+        setCookie(res, "adminToken", adminToken, { maxAge: 7 * 24 * 60 * 60 });
+        return res.status(302).redirect(`${base}/?admin_oauth=${encodeURIComponent(getProviderLabel(provider))}`);
+      }
+
+      const user = await upsertSocialUser(db, provider, extracted);
+      const token = signUserToken({
+        id: user._id.toString(),
+        email: user.email,
+        role: user.role || "user",
+      });
+      if (isMobileFlow) {
+        // Native app flow — hand the session JWT to the app via its deep
+        // link. Same user record, same token shape as the website.
+        return res.status(302).redirect(
+          `playbeat://oauth/callback?token=${encodeURIComponent(token)}&provider=${provider}&email=${encodeURIComponent(user.email || "")}`
+        );
+      }
+      setCookie(res, "token", token, { maxAge: 30 * 24 * 60 * 60 });
+      return res.status(302).redirect(`${base}/?social_success=${encodeURIComponent(getProviderLabel(provider))}`);
+    } catch (err: any) {
+      if (typeof stateQuery === "string" && stateQuery.endsWith(".m")) {
+        return res.status(302).redirect(`playbeat://oauth/callback?error=${encodeURIComponent(err.message || "Sign-in failed")}`);
+      }
+      return res.status(302).redirect(`${base}/?social_error=${encodeURIComponent(err.message || "Sign-in failed")}`);
+    }
+  }
+
+  // ============ /api/auth/meta/webhook — Meta webhook subscription ============
+  // GET: subscription handshake — echo hub.challenge ONLY when the verify
+  // token matches META_WEBHOOK_VERIFY_TOKEN (fail-closed, like every webhook
+  // receiver in this codebase).
+  if (route === "meta/webhook" && req.method === "GET") {
+    const mode = url.searchParams.get("hub.mode");
+    const token = url.searchParams.get("hub.verify_token");
+    const challenge = url.searchParams.get("hub.challenge");
+    const expected = process.env.META_WEBHOOK_VERIFY_TOKEN;
+    if (mode === "subscribe" && expected && token && challenge && token === expected) {
+      res.status(200).setHeader("Content-Type", "text/plain; charset=utf-8");
+      return res.send(String(challenge));
+    }
+    return jsonError(res, "Webhook verification failed.", 403);
+  }
+
+  // POST: signed event delivery (Instagram/Facebook webhooks). Authenticated
+  // by X-Hub-Signature-256 over the raw body — no signature, no acceptance.
+  // Events are stored for the admin feed; nothing here can mutate user or
+  // order state.
+  if (route === "meta/webhook" && req.method === "POST") {
+    const secrets = metaAppSecrets();
+    if (!secrets.length) {
+      return jsonError(res, "Webhook endpoint not configured.", 503);
+    }
+    const { candidates, via } = await captureMetaRawBody(req);
+    const signature = String(req.headers["x-hub-signature-256"] || "");
+    const verified = candidates.some((raw) => verifyHubSignature(raw, signature, secrets));
+    if (!verified) {
+      return jsonError(res, "Invalid webhook signature.", 403);
+    }
+    let body: any = null;
+    try {
+      body = JSON.parse(candidates[0]);
+    } catch {
+      /* non-JSON delivery — still stored for diagnosis */
+    }
+    try {
+      const db = await getDb();
+      await db.collection("meta_webhook_events").insertOne({
+        object: body?.object || null,
+        eventCount: Array.isArray(body?.entry) ? body.entry.length : 0,
+        signatureVerified: true,
+        bodyCaptureVia: via,
+        body: body || (candidates[0] || "").slice(0, 8000),
+        receivedAt: new Date(),
+      });
+    } catch (e) {
+      console.error("meta-webhook: log write failed", e);
+    }
+    // Always 200 once verified — Meta retries non-2xx deliveries.
+    return res.status(200).json({ success: true });
+  }
+
+  // ============ /api/auth/meta/data-deletion — Meta data deletion callback ====
+  // Required by Meta app review for Facebook/Instagram Login. Receives a
+  // signed_request carrying the app-scoped user id, deletes the matching local
+  // account and returns { url, confirmation_code } per Meta's spec. Financial
+  // order records are retained where legally required — the status page says so.
+  // NOTE: "meta/delete" is accepted as an alias of "meta/data-deletion" — the
+  // owner registered the shorter path in the Meta console; both must work.
+  if ((route === "meta/data-deletion" || route === "meta/delete") && req.method === "POST") {
+    const secrets = metaAppSecrets();
+    if (!secrets.length) {
+      return jsonError(res, "Data deletion endpoint not configured.", 503);
+    }
+    const signedRequest = extractFormField(req, "signed_request");
+    const payload = parseSignedRequest(signedRequest, secrets);
+    if (!payload?.user_id) {
+      return jsonError(res, "Invalid signed_request.", 400);
+    }
+    const providerUserId = String(payload.user_id);
+    const confirmationCode = randomBytes(12).toString("hex");
+    try {
+      const db = await getDb();
+      const usersCol = db.collection("users");
+      const user = await usersCol.findOne({ providerId: providerUserId });
+      let status = "account_deleted";
+      if (user) {
+        await usersCol.deleteOne({ _id: user._id });
+      } else {
+        status = "no_account_found";
+      }
+      await db.collection("data_deletion_requests").insertOne({
+        confirmationCode,
+        providerUserId,
+        issuerAppId: payload.issuer || null,
+        status,
+        orderRecordsRetained: true,
+        requestedAt: new Date(),
+        processedAt: new Date(),
+      });
+      return res.status(200).json({
+        url: `${PUBLIC_SITE_URL.replace(/\/$/, "")}/api/auth/meta/data-deletion?code=${confirmationCode}`,
+        confirmation_code: confirmationCode,
+      });
+    } catch (err: any) {
+      return jsonError(res, err?.message || "Data deletion processing failed.", 500);
+    }
+  }
+
+  // GET: deletion status page — the URL returned above must lead the user to
+  // a page showing their confirmation code and the deletion status.
+  if ((route === "meta/data-deletion" || route === "meta/delete") && req.method === "GET") {
+    const code = (url.searchParams.get("code") || "").trim();
+    let record: any = null;
+    if (code && /^[a-f0-9]{24}$/.test(code)) {
+      try {
+        const db = await getDb();
+        record = await db
+          .collection("data_deletion_requests")
+          .findOne({ confirmationCode: code });
+      } catch {
+        /* fall through to the not-found state */
+      }
+    }
+    const statusHtml = record
+      ? `<p class="ok">Status: <strong>${
+          record.status === "account_deleted"
+            ? "Deleted — your account and profile data have been removed."
+            : record.status === "no_account_found"
+              ? "No account was linked to this request — nothing to delete."
+              : String(record.status)
+        }</strong></p><p>Processed on ${new Date(record.processedAt).toUTCString()}. Order and financial records may be retained where required by law.</p>`
+      : `<p class="err">This confirmation code is unknown or invalid. Please double-check the link you received.</p>`;
+    res.status(200).setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.send(
+      `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PlayBeat — Data Deletion Status</title><style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#040814;color:#e2e8f0;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px}main{max-width:520px;background:#0b132b;border:1px solid rgba(255,193,7,.25);border-radius:20px;padding:32px}h1{font-size:20px;margin:0 0 8px;color:#ffc61a}p{font-size:14px;line-height:1.6;color:#94a3b8}.ok{color:#6ee7b7}.err{color:#fda4af}code{background:#040814;padding:2px 8px;border-radius:6px;font-size:13px;color:#ffc61a}</style></head><body><main><h1>Data Deletion Request</h1><p>Confirmation code: <code>${code || "—"}</code></p>${statusHtml}<p style="margin-top:20px;font-size:12px">— Playbeat Digital Private Limited · support@playbeat.digital</p></main></body></html>`
+    );
+  }
+
+  // ============ /api/auth/meta/deauthorize — Meta deauthorize callback ========
+  // Required by Meta app review. Records that the user revoked the app from
+  // their Facebook/Instagram settings. The account itself stays (email login
+  // remains possible); the social link is marked so support can see it.
+  if (route === "meta/deauthorize" && req.method === "POST") {
+    const secrets = metaAppSecrets();
+    if (!secrets.length) {
+      return jsonError(res, "Deauthorize endpoint not configured.", 503);
+    }
+    const signedRequest = extractFormField(req, "signed_request");
+    const payload = parseSignedRequest(signedRequest, secrets);
+    if (!payload?.user_id) {
+      return jsonError(res, "Invalid signed_request.", 400);
+    }
+    try {
+      const db = await getDb();
+      await db.collection("users").updateOne(
+        { providerId: String(payload.user_id) },
+        { $set: { deauthorizedAt: new Date(), updatedAt: new Date() } }
+      );
+      await db.collection("meta_webhook_events").insertOne({
+        object: "deauthorize",
+        providerUserId: String(payload.user_id),
+        signatureVerified: true,
+        receivedAt: new Date(),
+      });
+    } catch (err: any) {
+      return jsonError(res, err?.message || "Deauthorize processing failed.", 500);
+    }
+    return res.status(200).json({ success: true });
+  }
+
+  // ============ /api/auth/admin/logout ============
+  if (route === "admin/logout" && req.method === "POST") {
+    clearCookie(res, "adminToken");
+    return jsonOk(res, { success: true, message: "Admin session terminated." });
+  }
+
+  return jsonError(res, `Auth route not found: ${route}`, 404);
+}

@@ -1,0 +1,43 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated Playbeat Digital customer or admin profile synced from Firebase Auth (Google, Facebook, GitHub, TikTok OIDC, Phone SMS).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID matching the document ID." },
+        "displayName": { "type": "string", "description": "User display name." },
+        "email": { "type": "string", "format": "email", "description": "Verified email address if provided by the auth provider." },
+        "phoneNumber": { "type": "string", "description": "E.164 phone number for SMS sign-in users." },
+        "photoURL": { "type": "string", "description": "Optional avatar URL." },
+        "provider": { "type": "string", "description": "Primary Firebase sign-in provider identifier (google.com, facebook.com, github.com, oidc.tiktok, phone)." },
+        "role": { "type": "string", "enum": ["customer", "admin"], "description": "Access control role; non-admins are strictly restricted to customer." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "ISO timestamp when profile was first created." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "ISO timestamp of last sign-in or profile update." }
+      },
+      "required": ["uid", "provider", "role", "createdAt", "updatedAt"]
+    },
+    "WatchlistItem": {
+      "title": "WatchlistItem",
+      "description": "User-saved Playbeat LIVE TV channel bookmark.",
+      "type": "object",
+      "properties": {
+        "channelId": { "type": "string", "description": "Channel identifier matching the document ID." },
+        "channelName": { "type": "string", "description": "Display name of the saved TV channel." },
+        "category": { "type": "string", "description": "Channel category." },
+        "addedAt": { "type": "string", "format": "date-time", "description": "ISO timestamp when saved." }
+      },
+      "required": ["channelId", "channelName", "category", "addedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user account profiles containing PII (email, phoneNumber). Strictly readable/writable by the owning user or verified admin only."
+    },
+    "/users/{userId}/watchlist/{channelId}": {
+      "schema": { "$ref": "#/entities/WatchlistItem" },
+      "description": "Per-user Playbeat LIVE TV watchlist subcollection. Owner-only read/write access."
+    }
+  }
+}

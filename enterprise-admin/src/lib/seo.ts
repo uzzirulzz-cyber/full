@@ -1,0 +1,469 @@
+// seo.ts — per-route search-engine metadata for the SPA.
+// Google indexes playbeat.digital URLs individually; a client-side app must
+// therefore update <title>, description, canonical and Open Graph tags every
+// time the route changes, otherwise every URL appears as the homepage.
+// Admin routes are forced to noindex.
+
+const SITE = 'https://playbeat.digital'
+const DEFAULT_TITLE = 'PlayBeat Digital — Premium Digital Marketplace & Smart Projectors'
+const DEFAULT_DESC =
+  'Instant digital keys, gaming accounts, subscriptions, AI tools, SaaS licenses, and high-performance 4K Smart Projectors with 24/7 automated delivery.'
+const DEFAULT_IMAGE = `${SITE}/assets/images/playbeat/hero-marketplace.png`
+
+export interface RouteSeo {
+  title: string
+  description: string
+  path: string
+  image?: string
+  noindex?: boolean
+  ogType?: 'website' | 'product' | 'article'
+  /** Absolute canonical override — admin-controlled, advanced use only. */
+  canonicalUrl?: string
+  /** X/Twitter card overrides — fall back to the OG/title values when unset. */
+  twitterTitle?: string
+  twitterDescription?: string
+  twitterImage?: string
+}
+
+function upsertMeta(attr: 'name' | 'property', key: string, content: string) {
+  let el = document.head.querySelector<HTMLMetaElement>(`meta[${attr}="${key}"]`)
+  if (!el) {
+    el = document.createElement('meta')
+    el.setAttribute(attr, key)
+    document.head.appendChild(el)
+  }
+  el.setAttribute('content', content)
+}
+
+function upsertCanonical(path: string, canonicalUrl?: string) {
+  let el = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]')
+  if (!el) {
+    el = document.createElement('link')
+    el.rel = 'canonical'
+    document.head.appendChild(el)
+  }
+  el.href = canonicalUrl && /^https:\/\//.test(canonicalUrl) ? canonicalUrl : `${SITE}${path}`
+}
+
+// BreadcrumbList structured data — written on every non-home indexed route so
+// crawlers see the Home → Page hierarchy (audit §11). Deep hierarchies
+// (Home > Category > Product) pass a full itemList via applyBreadcrumbJsonLd.
+function upsertBreadcrumbJsonLd(path: string, name: string) {
+  if (path === '/') return
+  applyBreadcrumbJsonLd([
+    { name: 'Home', item: `${SITE}/` },
+    { name, item: `${SITE}${path}` },
+  ])
+}
+
+/**
+ * Write a BreadcrumbList with a real <a href> hierarchy. Callers MUST only
+ * pass crumbs that exist as crawlable links on the page.
+ */
+export function applyBreadcrumbJsonLd(items: { name: string; item?: string }[]) {
+  const id = 'breadcrumb-jsonld'
+  let el = document.getElementById(id) as HTMLScriptElement | null
+  if (!items || items.length === 0) {
+    el?.remove()
+    return
+  }
+  if (!el) {
+    el = document.createElement('script')
+    el.id = id
+    el.type = 'application/ld+json'
+    document.head.appendChild(el)
+  }
+  const data = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: items.map((c, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      name: c.name,
+      ...(c.item ? { item: c.item } : {}),
+    })),
+  }
+  el.textContent = JSON.stringify(data)
+}
+
+/**
+ * Product structured data for the quick-view modal — injected when a product
+ * modal opens, removed when it closes, so crawlers that render JS can pick up
+ * name/image/price/availability for the currently viewed product.
+ */
+export function applyProductJsonLd(product: {
+  name: string
+  description?: string
+  image?: string
+  additionalImages?: (string | undefined)[]
+  price: number
+  currency?: string
+  inStock?: boolean
+  sku?: string
+  url?: string
+  brand?: string
+  /** Real rating data ONLY — aggregateRating is omitted when these are 0/absent. */
+  rating?: number
+  reviewCount?: number
+  /** ISO date — surfaces as the Offer's priceValidUntil when a sale window is set. */
+  saleEndsAt?: string
+  /** Priced variants drive an AggregateOffer (lowPrice/highPrice/offerCount)
+   *  identical to the server-rendered schema — metadata never flips on mount. */
+  variants?: Array<{ price?: number | string }>
+} | null) {
+  const id = 'product-jsonld'
+  let el = document.getElementById(id) as HTMLScriptElement | null
+  if (!product) {
+    el?.remove()
+    return
+  }
+  if (!el) {
+    el = document.createElement('script')
+    el.id = id
+    el.type = 'application/ld+json'
+    document.head.appendChild(el)
+  }
+  const images = [product.image, ...(product.additionalImages || [])]
+    .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    .map((v) => (v.startsWith('http') ? v : `${SITE}${v}`))
+  const offerBase = {
+    url: product.url ? `${SITE}${product.url}` : `${SITE}/`,
+    availability: product.inStock === false ? 'https://schema.org/OutOfStock' : 'https://schema.org/InStock',
+    itemCondition: 'https://schema.org/NewCondition',
+    seller: { '@id': `${SITE}/#organization` },
+  }
+  const priceValidUntil =
+    product.saleEndsAt && !isNaN(new Date(product.saleEndsAt).getTime())
+      ? new Date(product.saleEndsAt).toISOString().slice(0, 10)
+      : undefined
+  // Variant products: AggregateOffer from the REAL priced variants only.
+  // Unpriced products: NO offers node at all — a fabricated/placeholder price
+  // would violate Google's product-data policies.
+  const pricedVariants = (product.variants || [])
+    .map((v) => Number(v?.price))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .sort((a, b) => a - b)
+  let offers: Record<string, unknown> | null = null
+  if (pricedVariants.length >= 2) {
+    offers = {
+      '@type': 'AggregateOffer',
+      lowPrice: pricedVariants[0],
+      highPrice: pricedVariants[pricedVariants.length - 1],
+      offerCount: pricedVariants.length,
+      priceCurrency: product.currency || 'PKR',
+      ...offerBase,
+    }
+  } else if (pricedVariants.length === 1) {
+    offers = {
+      '@type': 'Offer',
+      price: pricedVariants[0],
+      priceCurrency: product.currency || 'PKR',
+      ...(priceValidUntil ? { priceValidUntil } : {}),
+      ...offerBase,
+    }
+  } else if (Number(product.price) > 0) {
+    offers = {
+      '@type': 'Offer',
+      price: String(product.price),
+      priceCurrency: product.currency || 'PKR',
+      ...(priceValidUntil ? { priceValidUntil } : {}),
+      ...offerBase,
+    }
+  }
+  const data: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: product.name,
+    description: product.description || `${product.name} — instant delivery from PlayBeat Digital.`,
+    image: images.length ? images : undefined,
+    sku: product.sku,
+    brand: { '@type': 'Brand', name: product.brand || 'PlayBeat Digital' },
+    itemCondition: 'https://schema.org/NewCondition',
+    ...(offers ? { offers } : {}),
+  }
+  // AggregateRating ONLY from real, owner-curated rating data — never fabricated
+  const rating = Number(product.rating || 0)
+  const reviewCount = Number(product.reviewCount || 0)
+  if (rating > 0 && reviewCount > 0) {
+    data.aggregateRating = {
+      '@type': 'AggregateRating',
+      ratingValue: String(Math.min(5, Math.max(0, rating))),
+      reviewCount: String(Math.round(reviewCount)),
+    }
+  }
+  for (const k of Object.keys(data)) if (data[k] === undefined) delete data[k]
+  el.textContent = JSON.stringify(data)
+}
+
+function upsertJsonLd(path: string, name: string, description: string) {
+  const id = 'route-jsonld'
+  let el = document.getElementById(id) as HTMLScriptElement | null
+  if (!el) {
+    el = document.createElement('script')
+    el.id = id
+    el.type = 'application/ld+json'
+    document.head.appendChild(el)
+  }
+  const data = {
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    name,
+    description,
+    url: `${SITE}${path}`,
+    isPartOf: { '@id': `${SITE}/#website` },
+    publisher: { '@id': `${SITE}/#organization` },
+  }
+  el.textContent = JSON.stringify(data)
+}
+
+/** Apply per-route metadata. Call inside a useEffect keyed on the route. */
+export function applyRouteSeo(seo: RouteSeo) {
+  // Noindex routes keep their own explicit title (e.g. "Page Not Found",
+  // "Admin — PlayBeat Digital"); indexed routes get the brand suffix.
+  const title = seo.noindex
+    ? seo.title.includes('PlayBeat') || seo.title === 'Page Not Found (404)'
+      ? seo.title
+      : `${seo.title} — PlayBeat Digital`
+    : `${seo.title} | PlayBeat Digital`
+  const desc = seo.description || DEFAULT_DESC
+  const image = seo.image ? `${SITE}${seo.image}` : DEFAULT_IMAGE
+
+  document.title = title
+
+  upsertMeta('name', 'description', desc)
+  upsertMeta(
+    'name',
+    'robots',
+    seo.noindex
+      ? 'noindex, nofollow, noarchive'
+      : 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'
+  )
+
+  // Canonical always reflects the route's own path (admin presets carry
+  // /admin paths; the 404 preset carries /404) — or the admin-set override
+  upsertCanonical(seo.path, seo.canonicalUrl)
+
+  upsertMeta('property', 'og:title', title)
+  upsertMeta('property', 'og:description', desc)
+  upsertMeta('property', 'og:url', `${SITE}${seo.path}`)
+  upsertMeta('property', 'og:type', seo.ogType || 'website')
+  upsertMeta('property', 'og:image', image)
+
+  upsertMeta('name', 'twitter:card', 'summary_large_image')
+  upsertMeta('name', 'twitter:title', seo.twitterTitle || title)
+  upsertMeta('name', 'twitter:description', seo.twitterDescription || desc)
+  upsertMeta('name', 'twitter:image', seo.twitterImage || image)
+
+  if (!seo.noindex) {
+    upsertJsonLd(seo.path, seo.title, desc)
+    upsertBreadcrumbJsonLd(seo.path, seo.title)
+  } else {
+    document.getElementById('route-jsonld')?.remove()
+    document.getElementById('breadcrumb-jsonld')?.remove()
+  }
+}
+
+// ---- Catalog-wide SEO presets -------------------------------------------
+// Keep titles/descriptions aligned with sitemap.xml so every indexed URL
+// presents unique, accurate metadata to crawlers.
+
+export const SEO_PRESETS: Record<string, RouteSeo> = {
+  storefront: {
+    title: 'Premium Digital Marketplace & Smart Projectors',
+    description: DEFAULT_DESC,
+    path: '/',
+  },
+  streaming: {
+    title: 'Streaming Subscriptions — Netflix, Prime Video, Disney+, HBO Max',
+    description:
+      'Official Netflix, YouTube Premium, Prime Video, Disney+, HBO Max, SonyLIV, ZEE5, Crunchyroll, Hulu and more streaming plans at PlayBeat Digital prices in Pakistan.',
+    path: '/streaming',
+  },
+  subscriptions: {
+    title: 'Subscriptions & AI Tools — ChatGPT, Perplexity, Office 365, VPNs',
+    description:
+      'Genuine ChatGPT Plus, Perplexity Pro, Office 365, Adobe Creative Cloud, CapCut Pro, Grammarly, Turnitin and top VPN subscriptions with instant email delivery.',
+    path: '/subscriptions',
+  },
+  giftcards: {
+    title: 'Gift Cards — Xbox, PlayStation, Steam, Razer Gold, Apple',
+    description:
+      'Instant official gift card codes: Xbox, PlayStation Network, Steam Wallet, Razer Gold, Apple, Google Play and more — delivered to your inbox in minutes.',
+    path: '/gift-cards',
+  },
+  gaming: {
+    title: 'Gaming — Xbox Game Pass, Game Keys & Wallet Top-Ups',
+    description:
+      'Xbox Game Pass Ultimate, Steam & game keys and gaming wallet top-ups with full-duration warranty from PlayBeat Digital.',
+    path: '/gaming',
+  },
+  software: {
+    title: 'Software Licenses — Windows 11, Office 2024, Antivirus',
+    description:
+      'Genuine Windows 11/10, Office 2024/2021/2019 retail keys, Adobe CC, antivirus and productivity software with instant activation support.',
+    path: '/software',
+  },
+  'smart-projectors': {
+    title: 'Smart 4K Projectors — Magcubic, HY300, HY320, HCS350 & More',
+    description:
+      'Shop official Magcubic, Hongtop and HY-series smart 4K projectors with full home cinema lineup, warranty and courier delivery across Pakistan.',
+    path: '/smart-projectors',
+  },
+  'smart-4k-projectors': {
+    title: 'Smart 4K Projectors — Native 1080p/4K Home Cinema',
+    description:
+      'Compare and buy native 4K & 1080p smart projectors with Android TV, WiFi 6 and licensed streaming — curated 4K home cinema collection.',
+    path: '/smart-4k-projectors',
+  },
+  'ai-subscriptions': {
+    title: 'AI Subscriptions — ChatGPT Plus, Perplexity Pro, Leonardo AI',
+    description:
+      'Premium AI tool subscriptions: ChatGPT Plus, Perplexity Pro, Leonardo AI, ElevenLabs, Google Veo, Grammarly, QuillBot and more — activated on your own account.',
+    path: '/ai-subscriptions',
+  },
+  'steam-game-keys': {
+    title: 'Steam & Game Keys — Wallet Codes, Game Pass, PSN',
+    description:
+      'Steam wallet codes, game keys, Xbox Game Pass and PlayStation Network cards — instant delivery with PlayBeat warranty.',
+    path: '/steam-game-keys',
+  },
+  'windows-office': {
+    title: 'Windows & Office — Genuine Retail License Keys',
+    description:
+      'Genuine Windows 11/10 and Microsoft Office 2024/2021/2019 license keys with instant email delivery and activation guarantee.',
+    path: '/windows-office',
+  },
+  'creative-software': {
+    title: 'Creative Software — Adobe CC, CapCut Pro, Freepik',
+    description:
+      'Adobe Creative Cloud, CapCut Pro, Freepik, Canva Pro and other creative software subscriptions with instant activation.',
+    path: '/creative-software',
+  },
+  // /giftcards is a permanent redirect to the canonical /gift-cards URL
+  // (duplicate-content audit §37 — one canonical per collection)
+  'gift-cards': {
+    title: 'Gift Cards — Xbox, PlayStation, Steam, Razer Gold, Apple',
+    description:
+      'Instant official gift card codes: Xbox, PlayStation Network, Steam Wallet, Razer Gold, Apple, Google Play and more — delivered to your inbox in minutes.',
+    path: '/gift-cards',
+  },
+  services: {
+    title: 'Digital Services — AI Subscriptions, IPTV & Managed Plans',
+    description:
+      'PlayBeat Digital services: AI subscriptions, IPTV plans, productivity suites and managed digital services with 24/7 human support.',
+    path: '/digital-services',
+  },
+  'social-media': {
+    title: 'Social Media — Growth Services & Account Top-Ups',
+    description:
+      'Social media growth services, page boosts and account top-ups from PlayBeat Digital — expand your reach with verified providers.',
+    path: '/social-media',
+  },
+  'web-hosting': {
+    title: 'Web Hosting — Domains, VPS & SSL',
+    description:
+      'Web hosting, domains, VPS servers and SSL certificates — launch and run your website with PlayBeat Digital infrastructure partners.',
+    path: '/web-hosting',
+  },
+  'digital-marketing': {
+    title: 'Digital Marketing — SEO Tools & Growth Suites',
+    description:
+      'SEO toolkits, marketing suites and growth services for your business — rank higher, sell more, with PlayBeat Digital.',
+    path: '/digital-marketing',
+  },
+  web3: {
+    title: 'Web3 — Crypto Top-Ups, Wallets & Digital Assets',
+    description:
+      'Web3 services, crypto top-ups and digital-asset tooling — the next generation of internet services at PlayBeat Digital.',
+    path: '/web3',
+  },
+  invoice: {
+    title: 'Invoice — PlayBeat Digital',
+    description: '',
+    path: '/invoice',
+    noindex: true,
+  },
+  compare: {
+    title: 'Projector Comparison — Hardware Specification Matrix',
+    description:
+      'Side-by-side hardware comparison of every PlayBeat smart projector: resolution, brightness, OS, RAM, WiFi and more.',
+    path: '/compare',
+  },
+  warranty: {
+    title: 'Warranty & Replacement Policy',
+    description:
+      'PlayBeat Digital warranty & replacement policy for digital keys, subscriptions and smart projectors — coverage, timelines and how to claim.',
+    path: '/warranty',
+  },
+  privacy: {
+    title: 'Privacy Policy',
+    description:
+      'How PlayBeat Digital collects, uses, and protects your personal data.',
+    path: '/privacy',
+  },
+  terms: {
+    title: 'Terms of Service',
+    description:
+      'The rules and agreements that govern your use of the PlayBeat marketplace.',
+    path: '/terms',
+  },
+  'refund-policy': {
+    title: 'Refund Policy',
+    description:
+      'When refunds and replacements are available, and how to request one.',
+    path: '/refund-policy',
+  },
+  'shipping-policy': {
+    title: 'Shipping & Delivery Policy',
+    description:
+      'Instant digital delivery and courier timelines for hardware orders.',
+    path: '/shipping-policy',
+  },
+  contact: {
+    title: 'Contact & 24/7 Support',
+    description:
+      'Reach the PlayBeat team: live chat, email, WhatsApp, phone and office address — support within 2-4 hours.',
+    path: '/contact',
+  },
+  about: {
+    title: 'About PlayBeat Digital — Business Model, Payments & Customer Journey',
+    description:
+      'How PlayBeat Digital (Playbeat Digital Private Limited, Abbottabad, Pakistan) operates: what we sell, the complete customer journey from browsing to delivery, how our payment gateway is used at checkout, and PKR pricing with a currency converter.',
+    path: '/about',
+  },
+  download: {
+    title: 'Get the PlayBeat Digital App — Android & iOS',
+    description:
+      'Download the official PlayBeat Digital mobile app for Android and iOS. Shop digital products faster, manage orders, and access your account anywhere — same account as the website.',
+    path: '/download',
+  },
+  admin: { title: 'Admin — PlayBeat Digital', description: '', path: '/admin', noindex: true },
+  'admin-login': { title: 'Admin — PlayBeat Digital', description: '', path: '/admin/login', noindex: true },
+  // Checkout is a private, session-dependent transaction page — never indexed
+  checkout: {
+    title: 'Secure Checkout — PlayBeat Digital',
+    description: '',
+    path: '/checkout',
+    noindex: true,
+  },
+  // Account area is session-scoped private space — never indexed (audit §5).
+  // Same for the order-status and invoice deep links.
+  account: {
+    title: 'My Account — PlayBeat Digital',
+    description: '',
+    path: '/account',
+    noindex: true,
+  },
+  order: {
+    title: 'Order Status — PlayBeat Digital',
+    description: '',
+    path: '/order',
+    noindex: true,
+  },
+  notfound: {
+    title: 'Page Not Found (404)',
+    description: 'The page you are looking for does not exist.',
+    path: '/404',
+    noindex: true,
+  },
+}

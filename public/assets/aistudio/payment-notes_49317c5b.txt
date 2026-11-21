@@ -1,0 +1,137 @@
+PAYPAL for intenationational checkout card&#x20;
+
+
+
+### Here are the credentials you'll need
+
+This information will be available in the documentation, too.
+
+**API Credentials**
+
+**Sandbox**Live
+
+API Key:AYv9_tcetmdAnV5bUU5YWYRKGphoKXNdrEI4oOcJlH
+
+---
+
+Secret:EKzS2Z8VTX3kGGLRfII6TgnPpwTe9axDOhM2GA4mt3Ee9B6wvVWKqdZ6vB8_66Yp123clVhdWxosoKdb
+
+---
+
+[Manage API credentials](https://www.paypal.com/merchantapps/setup/checkout/apicredentials)
+
+**Sandbox credentials**
+
+Username:sb-xm66z52665489@business.example.com
+
+---
+
+Password: v402r?D&
+
+
+
+local jazzcash easypaisa bank rapid gateway&#x20;
+
+
+
+ur merchant onboarding application has been approved successfully. Your live production credentials are detailed below:
+
+**Merchant ID 1367**
+
+**Secret Key  tEgftZV8X0oiEZwXlJA4vgFMtWHz7EGeLAxMwOxTOYg**
+
+&#x20;No Integrity Salt is configured on your account. It is not required for card&#x20;
+
+##### Signing salt
+
+56cf0671258275f97f41f1855aa200b4c6986157d905f2b375b7d2211b1d17c4
+
+
+
+**1**
+
+**Get an access token (your backend) — same as the redirect flow**
+
+POST [https://secure.rapid-gateway.com/oauth2/token](https://secure.rapid-gateway.com/oauth2/token) Authorization: Basic base64(clientId:clientSecret) Content-Type: application/x-www-form-urlencoded  grant_type=client_credentials  → { "access_token": "…", "token_type": "Bearer", "expires_in": 299 }
+
+**2**
+
+**Create a checkout session (your backend)**
+
+POST [https://secure.rapid-gateway.com/v1/checkout-sessions](https://secure.rapid-gateway.com/v1/checkout-sessions) Authorization: Bearer \<access_token> Content-Type: application/json X-Environment: LIVE            # or TEST for sandbox  { "merchantId": 384, "amount": 1500.00, "currency": "PKR", "basketId": "ORDER-123",   "customerEmail": "buyer@example.com", "customerMobile": "03001234567" }  → { "sessionId": "cs\_…", "clientSecret": "cs\_…\_secret\_…", "publishableKey": "pk_live_384" }
+
+The amount is locked server-side here — the customer can never change what they pay. Keep the `clientSecret` for the page; never send your access token to the browser.
+
+**3**
+
+**Mount the SDK (your page)**
+
+\<div id="rp-checkout">\</div> \<script src="[https://secure.rapid-gateway.com/sdk/v1/rapidpay.js](https://secure.rapid-gateway.com/sdk/v1/rapidpay.js)">\</script> \<script>   const rp = RapidPay(publishableKey);   const checkout = rp.mountCheckout('#rp-checkout', {     clientSecret, amount: 1500, currency: 'PKR', merchantName: 'Acme',     onSuccess: ({ sessionId }) => showThankYou(),      // customer paid in-iframe     onPending: ({ sessionId }) => showAwaitingApproval(), // e.g. Raast request-to-pay     onError:   (e) => showError(e),   }); \</script>
+
+**4**
+
+**Verify the outcome (your backend — never trust the browser)**
+
+// the customer completes the payment INSIDE the iframe (any enabled method, // incl. 3-D Secure / OTP / wallet approval / QR). Verify server-side: GET /v1/checkout-sessions/{sessionId}          (Bearer \<access_token>) → { "status": "SUCCEEDED" | "FAILED" | "PROCESSING" | "EXPIRED", … }  // poll until terminal — session status is the source of truth; fulfil the // order only on SUCCEEDED. Every rail (card, wallet, bank, Raast) also emits // signed transaction.completed / transaction.failed webhooks (see the Webhooks // section) — use them as the trigger, this check as the confirmation.
+
+**Customize it.** The iframe follows your portal **Checkout Page** settings (Settings → Checkout) — colours, heading, logo and which payment-method tabs show. **Test mode:** create the session with your TEST credentials — the same UI renders with a TEST badge and payments are simulated by the sandbox (amount 100=success, 200=failed, 300=pending), no real money. **Platforms:** WooCommerce / PHP / React / Vue via the JS SDK; Flutter / Android / iOS via a WebView today (native SDKs on the roadmap). Shopify uses the redirect (Payments App) — embedded only on headless storefronts. **API-only card integration** (tokenize + confirm with next_action) remains available for custom UIs.
+
+## Sandbox TestingTEST MODE
+
+Simulate the full hosted-checkout flow end-to-end — no real money moves. Same redirect flow as live; the sandbox replaces the real provider. Base URL: `https://secure.rapid-gateway.com`
+
+TEST transactions are written with `environment=TEST` — they appear on the **Transactions → Test** tab and never touch live reports, settlement, or payouts. Pick an outcome on the checkout page, or let the **amount magic-value** decide.
+
+| **Amount** | **Outcome** | **Explicit TEST_SCENARIO values**                                                                                                                                      |
+| :--------- | :---------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `100`      | SUCCESS     | `SUCCESS` · `FAILED` · `PENDING` · `EXPIRED` · `INSUFFICIENT_BALANCE` · `INVALID_OTP` · `TIMEOUT` · `DUPLICATE`<br>A chosen scenario overrides the amount magic-value. |
+| `200`      | FAILED      |                                                                                                                                                                        |
+| `300`      | PENDING     |                                                                                                                                                                        |
+| `400`      | EXPIRED     |                                                                                                                                                                        |
+| `500`      | TIMEOUT     |                                                                                                                                                                        |
+
+**1**
+
+**Get a Test Token**
+
+A Bearer token is required. The sandbox accepts the shared **test client** — `client` / `secret` — pre-filled below. Sent as **Basic Auth** to the same token endpoint.
+
+**Token Endpoint**
+
+**Client ID (test)**
+
+**Client Secret (test)**
+
+Shared public test credential — the same `client` / `secret` pair for every merchant. Not your live keys.
+
+**Get Test Token**
+
+**Step 2 — Launch Sandbox Checkout**
+
+**2**
+
+**Launch Sandbox Checkout**
+
+Sends `application/x-www-form-urlencoded` to `POST /sandbox/process-transaction` with your test Bearer. The response is a redirect to the hosted **TEST-MODE** checkout — open it to pick an outcome and finish the test.
+
+**Merchant ID \***
+
+**Merchant Name**
+
+**Amount (PKR) \***
+
+**Test Scenario**Auto (use amount magic-value)SUCCESSFAILEDPENDINGEXPIREDINSUFFICIENT_BALANCEINVALID_OTPTIMEOUTDUPLICATE
+
+**Customer Mobile**
+
+**Basket / Order ID**
+
+**Success URL**
+
+**Failure URL**
+
+**Launch Sandbox CheckoutReset**
+
+## Webhooks
+
+Signed notifications sent straight to your backend w

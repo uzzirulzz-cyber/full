@@ -1,0 +1,624 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "node scripts/generate-legal-pages.mjs && node scripts/generate-ads-txt.mjs && vite build && bun scripts/generate-hero-replica.tsx; node scripts/generate-seo-shell.mjs",
+  "outputDirectory": "dist",
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/admin",
+      "permanent": false,
+      "has": [
+        {
+          "type": "host",
+          "value": "admin.playbeat.digital"
+        }
+      ]
+    },
+    {
+      "source": "/storefront",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/storefront/:path*",
+      "destination": "/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/giftcards",
+      "destination": "/gift-cards",
+      "permanent": true
+    },
+    {
+      "source": "/(.*)",
+      "destination": "https://playbeat.digital/$1",
+      "permanent": true,
+      "has": [
+        {
+          "type": "host",
+          "value": "www.playbeat.digital"
+        }
+      ]
+    },
+    {
+      "source": "/legal/privacy",
+      "destination": "/privacy",
+      "permanent": true
+    },
+    {
+      "source": "/legal/terms",
+      "destination": "/terms",
+      "permanent": true
+    },
+    {
+      "source": "/legal/terms-and-conditions",
+      "destination": "/terms",
+      "permanent": true
+    },
+    {
+      "source": "/legal/refund",
+      "destination": "/refund-policy",
+      "permanent": true
+    },
+    {
+      "source": "/legal/refund-policy",
+      "destination": "/refund-policy",
+      "permanent": true
+    },
+    {
+      "source": "/legal/shipping",
+      "destination": "/shipping-policy",
+      "permanent": true
+    },
+    {
+      "source": "/legal/shipping-policy",
+      "destination": "/shipping-policy",
+      "permanent": true
+    },
+    {
+      "source": "/legal/delivery",
+      "destination": "/shipping-policy",
+      "permanent": true
+    },
+    {
+      "source": "/legal/warranty",
+      "destination": "/warranty",
+      "permanent": true
+    },
+    {
+      "source": "/legal/contact",
+      "destination": "/contact",
+      "permanent": true
+    },
+    {
+      "source": "/legal",
+      "destination": "/terms",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/organization",
+      "destination": "/api/auth?organization=1"
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/products?pbSitemap=index"
+    },
+    {
+      "source": "/sitemap-products.xml",
+      "destination": "/api/products?pbSitemap=products"
+    },
+    {
+      "source": "/sitemap-categories.xml",
+      "destination": "/api/products?pbSitemap=categories"
+    },
+    {
+      "source": "/sitemap-pages.xml",
+      "destination": "/api/products?pbSitemap=pages"
+    },
+    {
+      "source": "/sitemap-services.xml",
+      "destination": "/api/products?pbSitemap=services"
+    },
+    {
+      "source": "/api/auth/:path*",
+      "destination": "/api/auth"
+    },
+    {
+      "source": "/api/products/:path*",
+      "destination": "/api/products"
+    },
+    {
+      "source": "/api/admin/:path*",
+      "destination": "/api/admin"
+    },
+    {
+      "source": "/api/orders/:path*",
+      "destination": "/api/orders"
+    },
+    {
+      "source": "/api/orders",
+      "destination": "/api/orders"
+    },
+    {
+      "source": "/api/payments/:path*",
+      "destination": "/api/payments"
+    },
+    {
+      "source": "/api/payments",
+      "destination": "/api/payments"
+    },
+    {
+      "source": "/api/mongodb/:path*",
+      "destination": "/api/mongodb"
+    },
+    {
+      "source": "/api/analytics/:path*",
+      "destination": "/api/analytics"
+    },
+    {
+      "source": "/api/analytics",
+      "destination": "/api/analytics"
+    },
+    {
+      "source": "/api/cms/:path*",
+      "destination": "/api/cms"
+    },
+    {
+      "source": "/api/services/:path*",
+      "destination": "/api/cms"
+    },
+    {
+      "source": "/api/services",
+      "destination": "/api/cms"
+    },
+    {
+      "source": "/api/service-requests",
+      "destination": "/api/cms"
+    },
+    {
+      "source": "/api/cms",
+      "destination": "/api/cms"
+    },
+    {
+      "source": "/api/app/:path*",
+      "destination": "/api/app"
+    },
+    {
+      "source": "/api/app",
+      "destination": "/api/app"
+    },
+    {
+      "source": "/api/messages/:path*",
+      "destination": "/api/messages"
+    },
+    {
+      "source": "/api/messages",
+      "destination": "/api/messages"
+    },
+    {
+      "source": "/webhooks/rapid-gateway",
+      "destination": "/api/payments?rapid=1"
+    },
+    {
+      "source": "/api/rapid/webhook",
+      "destination": "/api/payments?rapid=1"
+    },
+    {
+      "source": "/api/data-deletion",
+      "destination": "/api/contact?metaDeletion=1"
+    },
+    {
+      "source": "/data-deletion",
+      "destination": "/data-deletion.html"
+    },
+    {
+      "source": "/order/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/checkout",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/account",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/account/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/download",
+      "destination": "/api/products?pbRender=1&pbPath=/download"
+    },
+    {
+      "source": "/download/:path*",
+      "destination": "/api/products?pbRender=1&pbPath=/download/:path*"
+    },
+    {
+      "source": "/admin",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin/login",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/crm",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/crm/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/streaming",
+      "destination": "/api/products?pbRender=1&pbPath=/streaming"
+    },
+    {
+      "source": "/subscriptions",
+      "destination": "/api/products?pbRender=1&pbPath=/subscriptions"
+    },
+    {
+      "source": "/gift-cards",
+      "destination": "/api/products?pbRender=1&pbPath=/gift-cards"
+    },
+    {
+      "source": "/services",
+      "destination": "/api/products?pbRender=1&pbPath=/services"
+    },
+    {
+      "source": "/services/request",
+      "destination": "/api/products?pbRender=1&pbPath=/services/request"
+    },
+    {
+      "source": "/services/portfolio",
+      "destination": "/api/products?pbRender=1&pbPath=/services/portfolio"
+    },
+    {
+      "source": "/services/:slug",
+      "destination": "/api/products?pbRender=1&pbPath=/services/:slug"
+    },
+    {
+      "source": "/services/build",
+      "destination": "/api/products?pbRender=1&pbPath=/services/build"
+    },
+    {
+      "source": "/services/demos",
+      "destination": "/api/products?pbRender=1&pbPath=/services/demos"
+    },
+    {
+      "source": "/services/company",
+      "destination": "/api/products?pbRender=1&pbPath=/services/company"
+    },
+    {
+      "source": "/services/package/:slug",
+      "destination": "/api/products?pbRender=1&pbPath=/services/package/:slug"
+    },
+    {
+      "source": "/services/demo/:slug",
+      "destination": "/api/products?pbRender=1&pbPath=/services/demo/:slug"
+    },
+    {
+      "source": "/social-media",
+      "destination": "/api/products?pbRender=1&pbPath=/social-media"
+    },
+    {
+      "source": "/web-hosting",
+      "destination": "/api/products?pbRender=1&pbPath=/web-hosting"
+    },
+    {
+      "source": "/digital-marketing",
+      "destination": "/api/products?pbRender=1&pbPath=/digital-marketing"
+    },
+    {
+      "source": "/web3",
+      "destination": "/api/products?pbRender=1&pbPath=/web3"
+    },
+    {
+      "source": "/invoice/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/gaming",
+      "destination": "/api/products?pbRender=1&pbPath=/gaming"
+    },
+    {
+      "source": "/software",
+      "destination": "/api/products?pbRender=1&pbPath=/software"
+    },
+    {
+      "source": "/smart-projectors",
+      "destination": "/api/products?pbRender=1&pbPath=/smart-projectors"
+    },
+    {
+      "source": "/smart-4k-projectors",
+      "destination": "/api/products?pbRender=1&pbPath=/smart-4k-projectors"
+    },
+    {
+      "source": "/ai-subscriptions",
+      "destination": "/api/products?pbRender=1&pbPath=/ai-subscriptions"
+    },
+    {
+      "source": "/steam-game-keys",
+      "destination": "/api/products?pbRender=1&pbPath=/steam-game-keys"
+    },
+    {
+      "source": "/windows-office",
+      "destination": "/api/products?pbRender=1&pbPath=/windows-office"
+    },
+    {
+      "source": "/creative-software",
+      "destination": "/api/products?pbRender=1&pbPath=/creative-software"
+    },
+    {
+      "source": "/digital-services",
+      "destination": "/api/products?pbRender=1&pbPath=/digital-services"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
+      "source": "/policy",
+      "destination": "/privacy.html"
+    },
+    {
+      "source": "/privacypolicyterms",
+      "destination": "/privacy.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/terms.html"
+    },
+    {
+      "source": "/refund-policy",
+      "destination": "/refund-policy.html"
+    },
+    {
+      "source": "/shipping-policy",
+      "destination": "/shipping-policy.html"
+    },
+    {
+      "source": "/warranty",
+      "destination": "/warranty.html"
+    },
+    {
+      "source": "/about",
+      "destination": "/api/products?pbRender=1&pbPath=/about"
+    },
+    {
+      "source": "/contact",
+      "destination": "/api/products?pbRender=1&pbPath=/contact"
+    },
+    {
+      "source": "/compare",
+      "destination": "/api/products?pbRender=1&pbPath=/compare"
+    },
+    {
+      "source": "/product/:path*",
+      "destination": "/api/products?pbRender=1&pbPath=/product/:path*"
+    },
+    {
+      "source": "/streaming/:path*",
+      "destination": "/api/products?pbRender=1&pbPath=/streaming/:path*"
+    },
+    {
+      "source": "/subscriptions/:path*",
+      "destination": "/api/products?pbRender=1&pbPath=/subscriptions/:path*"
+    },
+    {
+      "source": "/gift-cards/:path*",
+      "destination": "/api/products?pbRender=1&pbPath=/gift-cards/:path*"
+    },
+    {
+      "source": "/gaming/:path*",
+      "destination": "/api/products?pbRender=1&pbPath=/gaming/:path*"
+    },
+    {
+      "source": "/software/:path*",
+      "destination": "/api/products?pbRender=1&pbPath=/software/:path*"
+    },
+    {
+      "source": "/smart-projectors/:path*",
+      "destination": "/api/products?pbRender=1&pbPath=/smart-projectors/:path*"
+    },
+    {
+      "source": "/category/:path*",
+      "destination": "/api/products?pbRender=1&pbPath=/category/:path*"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/pwa/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=604800"
+        }
+      ]
+    },
+    {
+      "source": "/media/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    },
+    {
+      "source": "/sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/javascript; charset=utf-8"
+        }
+      ]
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/manifest+json; charset=utf-8"
+        }
+      ]
+    },
+    {
+      "source": "/admin",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/admin/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/crm",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/crm/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/account",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        }
+      ]
+    },
+    {
+      "source": "/account/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        }
+      ]
+    },
+    {
+      "source": "/checkout",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        }
+      ]
+    },
+    {
+      "source": "/order/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        }
+      ]
+    },
+    {
+      "source": "/invoice/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        }
+      ]
+    }
+  ]
+}

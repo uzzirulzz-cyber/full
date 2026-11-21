@@ -1,0 +1,1051 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { SourceCrmView } from './SourceCrmView'
+import {
+  LayoutDashboard, Inbox, MessageCircle, PhoneCall, Phone, Users, UserCircle2,
+  CheckSquare, CalendarClock, BarChart3, IdCard, Search, Bell, LogOut,
+  Menu, X, ChevronLeft, PhoneIncoming, PhoneOutgoing, Zap, Plus, Minus,
+  Mic, MicOff, Volume2, VolumeX, Pause, Square, Star, Clock, Send,
+  Tag, MapPin, Mail, Globe, Briefcase, Target, StickyNote, TrendingUp, AlertCircle,
+  CheckCircle, ArrowLeft, ArrowRight, RotateCw
+} from 'lucide-react'
+
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || ''
+const getAdminToken = () => localStorage.getItem('playbeat_admin_token')
+
+async function api(path: string, opts: RequestInit = {}) {
+  const token = getAdminToken()
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(opts.headers || {}),
+    },
+    credentials: 'include',
+  })
+  const text = await res.text()
+  let data: any = null
+  if (text) { try { data = JSON.parse(text) } catch { data = text } }
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`)
+  return data
+}
+
+type CRMView = 'dashboard' | 'pipeline' | 'source-crm' | 'inbox' | 'whatsapp' | 'calls' | 'dialer' | 'leads' | 'customers' | 'tasks' | 'followups' | 'employees'
+
+const NAV: { key: CRMView; label: string; icon: any }[] = [
+  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { key: 'pipeline', label: 'Deals & Pipeline', icon: Briefcase },
+  { key: 'source-crm', label: 'Lead Generation CRM', icon: Users },
+  { key: 'inbox', label: 'Inbox', icon: Inbox },
+  { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
+  { key: 'calls', label: 'Calls', icon: PhoneCall },
+  { key: 'dialer', label: 'Dialer', icon: Phone },
+  { key: 'leads', label: 'Leads', icon: Users },
+  { key: 'customers', label: 'Customers', icon: UserCircle2 },
+  { key: 'tasks', label: 'Tasks', icon: CheckSquare },
+  { key: 'followups', label: 'Follow-ups', icon: CalendarClock },
+  { key: 'employees', label: 'Employees', icon: IdCard },
+]
+
+export function CRMApp({ onExit, embedded = false }: { onExit: () => void; embedded?: boolean }) {
+  const [view, setView] = useState<CRMView>('dashboard')
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [search, setSearch] = useState('')
+
+  return (
+    <div className={`pb-crm-embedded flex w-full bg-[#F8FAFC] ${embedded ? "min-h-[65vh]" : "h-screen"}`}>
+      {/* Sidebar — enterprise navy */}
+      <aside className="w-60 shrink-0 flex flex-col bg-[#070B12] text-[#AAB4C3] border-r border-[rgba(255,255,255,0.08)]">
+        <div className="h-14 px-4 flex items-center gap-2.5 border-b border-[rgba(255,255,255,0.08)]">
+          <div className="w-8 h-8 rounded-lg bg-[#F5C542] flex items-center justify-center shrink-0">
+            <PhoneCall className="w-4 h-4 text-[#070B12]" />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold text-white">PlayBeat CRM</span>
+            <span className="text-[10px] text-[#6B7689] -mt-0.5">Communication Center</span>
+          </div>
+        </div>
+        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
+          {NAV.map((n) => {
+            const Icon = n.icon
+            return (
+              <button key={n.key} onClick={() => setView(n.key)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
+                  view === n.key ? 'bg-[#F5C542] text-[#070B12] font-semibold' : 'text-[#AAB4C3] hover:bg-[#0D131D] hover:text-white'
+                }`}>
+                <Icon className="w-4 h-4 shrink-0" />
+                <span>{n.label}</span>
+              </button>
+            )
+          })}
+        </nav>
+        <div className="border-t border-[rgba(255,255,255,0.08)] p-3">
+          <button onClick={onExit} className="flex items-center gap-2 text-xs text-[#6B7689] hover:text-white px-2 py-1.5">
+            <ArrowLeft className="w-3 h-3" /> {embedded ? "Back to Admin" : "Back to Storefront"}
+          </button>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="h-14 px-4 flex items-center justify-between border-b border-slate-200 bg-white">
+          <div className="flex items-center gap-2 flex-1 max-w-md">
+            <button onClick={() => setMobileNavOpen(true)} className="md:hidden"><Menu className="w-5 h-5" /></button>
+            <div className="relative w-full">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input type="text" placeholder="Search customers, leads, phone…" value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 text-sm bg-slate-100 rounded-md border border-transparent focus:bg-white focus:border-[#F4C542] focus:outline-none" />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="relative h-9 w-9 flex items-center justify-center rounded-md hover:bg-slate-100">
+              <Bell className="w-4 h-4" />
+            </button>
+            <div className="w-8 h-8 rounded-full bg-[#070B12] text-white flex items-center justify-center text-xs font-semibold">A</div>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-auto">
+          {view === 'dashboard' && <DashboardView />}
+          {view === 'pipeline' && <PipelineView />}
+          {view === 'source-crm' && <SourceCrmView onNavigate={(target) => setView(target)} />}
+          {view === 'inbox' && <InboxView />}
+          {view === 'whatsapp' && <WhatsAppView />}
+          {view === 'calls' && <CallsView />}
+          {view === 'dialer' && <DialerView />}
+          {view === 'leads' && <LeadsView />}
+          {view === 'customers' && <CustomersView />}
+          {view === 'tasks' && <TasksView />}
+          {view === 'followups' && <FollowupsView />}
+          {view === 'employees' && <EmployeesView />}
+        </main>
+
+        {/* Mobile bottom nav */}
+        <nav className="md:hidden flex items-center justify-around border-t border-slate-200 bg-white px-1 py-1">
+          {['inbox', 'calls', 'dialer', 'leads'].map((v) => {
+            const item = NAV.find(n => n.key === v)!
+            const Icon = item.icon
+            return <button key={v} onClick={() => setView(v as CRMView)}
+              className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-md ${view === v ? 'text-[#070B12]' : 'text-slate-500'}`}>
+              <Icon className="w-5 h-5" /><span className="text-[10px]">{item.label}</span>
+            </button>
+          })}
+          <button onClick={() => setMobileNavOpen(true)} className="flex flex-col items-center gap-0.5 px-3 py-1.5 text-slate-500">
+            <Menu className="w-5 h-5" /><span className="text-[10px]">More</span>
+          </button>
+        </nav>
+      </div>
+
+      {/* Mobile sidebar */}
+      {mobileNavOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileNavOpen(false)} />
+          <aside className="relative w-64 bg-[#070B12] text-[#AAB4C3] flex flex-col">
+            <div className="h-14 px-4 flex items-center justify-between border-b border-[rgba(255,255,255,0.08)]">
+              <span className="text-sm font-semibold text-white">PlayBeat CRM</span>
+              <button onClick={() => setMobileNavOpen(false)}><X className="w-4 h-4" /></button>
+            </div>
+            <nav className="flex-1 py-3 px-2 space-y-0.5">
+              {NAV.map((n) => {
+                const Icon = n.icon
+                return <button key={n.key} onClick={() => { setView(n.key); setMobileNavOpen(false) }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm ${view === n.key ? 'bg-[#F5C542] text-[#070B12]' : 'text-[#AAB4C3] hover:bg-[#0D131D]'}`}>
+                  <Icon className="w-4 h-4" /> {n.label}
+                </button>
+              })}
+            </nav>
+          </aside>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Dashboard ───────────────────────────────────────────────────────────
+
+const PIPELINE_STAGES = [
+  { id: 'inbound', label: 'New inbound', tone: 'sky' },
+  { id: 'contacted', label: 'Contacted', tone: 'cyan' },
+  { id: 'qualified', label: 'Qualified', tone: 'indigo' },
+  { id: 'demo', label: 'Pitch / demo', tone: 'violet' },
+  { id: 'proposal', label: 'Proposal', tone: 'amber' },
+  { id: 'won', label: 'Closed won', tone: 'emerald' },
+  { id: 'lost', label: 'Closed lost', tone: 'rose' },
+] as const
+
+function PipelineView() {
+  const [deals, setDeals] = useState<any[]>([])
+  const [kpis, setKpis] = useState<any>({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
+  const [form, setForm] = useState({ dealName: '', companyName: '', value: '', currency: 'USD', stage: 'inbound', contactEmail: '' })
+  const money = (value: number, currency = 'USD') => new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 }).format(Number(value) || 0)
+  const load = useCallback(async () => {
+    setError('')
+    try {
+      const result = await api('/api/messages/crm/pipeline')
+      setDeals(result.deals || [])
+      setKpis(result.kpis || {})
+    } catch (e: any) {
+      setError(e.message || 'Could not load the pipeline.')
+    } finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+  const moveDeal = async (deal: any, stage: string) => {
+    setSaving(true); setError('')
+    try {
+      await api(`/api/messages/crm/deals/${deal._id}`, { method: 'PATCH', body: JSON.stringify({ stage }) })
+      await load()
+    } catch (e: any) { setError(e.message || 'Could not update this deal.') }
+    finally { setSaving(false) }
+  }
+  const createDeal = async (event: React.FormEvent) => {
+    event.preventDefault(); setSaving(true); setError('')
+    try {
+      await api('/api/messages/crm/deals', { method: 'POST', body: JSON.stringify({ ...form, value: Number(form.value) }) })
+      setForm({ dealName: '', companyName: '', value: '', currency: 'USD', stage: 'inbound', contactEmail: '' })
+      setShowCreate(false)
+      await load()
+    } catch (e: any) { setError(e.message || 'Could not create the deal.') }
+    finally { setSaving(false) }
+  }
+  const summary = [
+    ['Open pipeline', money(kpis.totalPipelineValue || 0), TrendingUp],
+    ['Weighted forecast', money(kpis.weightedForecastValue || 0), Target],
+    ['Won revenue', money(kpis.wonRevenue || 0), CheckCircle],
+    ['Active deals', String(kpis.activeDealsCount || 0), Briefcase],
+  ] as const
+  return (
+    <div className="p-5 md:p-6 space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-slate-500">Sales workspace</p><h1 className="mt-1 text-2xl font-semibold text-[#070B12]">Deals &amp; Pipeline</h1><p className="mt-1 text-sm text-slate-500">Track opportunities from first contact through close.</p></div>
+        <div className="flex gap-2">
+          <button onClick={() => { setLoading(true); load() }} disabled={loading || saving} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"><RotateCw className="mr-2 inline h-4 w-4" />Refresh</button>
+          <button onClick={() => setShowCreate(true)} className="rounded-md bg-[#070B12] px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"><Plus className="mr-1 inline h-4 w-4" />New deal</button>
+        </div>
+      </div>
+      {error && <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>}
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{summary.map(([label, value, Icon]) => <div key={label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between text-xs font-medium uppercase tracking-wide text-slate-500"><span>{label}</span><Icon className="h-4 w-4 text-[#B28A00]" /></div><div className="mt-3 text-2xl font-semibold text-[#070B12]">{value}</div></div>)}</div>
+      {loading ? <div className="rounded-lg border border-slate-200 bg-white p-12 text-center text-sm text-slate-500">Loading pipeline…</div> : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+          {PIPELINE_STAGES.map((stage, stageIndex) => {
+            const stageDeals = deals.filter(d => d.stage === stage.id)
+            const total = stageDeals.reduce((sum, d) => sum + (Number(d.value) || 0), 0)
+            return <section key={stage.id} aria-label={stage.label} className="min-h-56 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+              <div className="mb-3 flex items-start justify-between gap-2"><div><h2 className="text-sm font-semibold text-slate-800">{stage.label}</h2><p className="mt-0.5 text-xs text-slate-500">{stageDeals.length} deals · {money(total, stageDeals[0]?.currency || 'USD')}</p></div><span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-600">{stageDeals.length}</span></div>
+              <div className="space-y-2">
+                {stageDeals.map(deal => <article key={deal._id} className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
+                  <h3 className="text-sm font-semibold text-slate-900">{deal.dealName}</h3><p className="mt-1 text-xs text-slate-500">{deal.companyName}</p>
+                  <p className="mt-2 text-base font-semibold text-slate-900">{money(deal.value, deal.currency || 'USD')}</p>
+                  {deal.contactEmail && <p className="mt-1 truncate text-xs text-slate-500"><Mail className="mr-1 inline h-3 w-3" />{deal.contactEmail}</p>}
+                  <div className="mt-3 flex items-center justify-between gap-1">
+                    <span className="text-[11px] text-slate-400">{deal.assignedRepName || 'Unassigned'}</span>
+                    <div className="flex gap-1">
+                      {stageIndex > 0 && <button title={`Move to ${PIPELINE_STAGES[stageIndex - 1].label}`} aria-label={`Move ${deal.dealName} to previous stage`} disabled={saving} onClick={() => moveDeal(deal, PIPELINE_STAGES[stageIndex - 1].id)} className="rounded border border-slate-200 px-1.5 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"><ArrowLeft className="h-3.5 w-3.5" /></button>}
+                      {stageIndex < PIPELINE_STAGES.length - 1 && <button title={`Move to ${PIPELINE_STAGES[stageIndex + 1].label}`} aria-label={`Move ${deal.dealName} to next stage`} disabled={saving} onClick={() => moveDeal(deal, PIPELINE_STAGES[stageIndex + 1].id)} className="rounded border border-slate-200 px-1.5 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"><ArrowRight className="h-3.5 w-3.5" /></button>}
+                    </div>
+                  </div>
+                </article>)}
+                {!stageDeals.length && <div className="rounded-md border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-400">No deals in this stage</div>}
+              </div>
+            </section>
+          })}
+        </div>
+      )}
+      {showCreate && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setShowCreate(false) }}>
+        <form onSubmit={createDeal} className="w-full max-w-lg space-y-4 rounded-xl bg-white p-5 shadow-2xl">
+          <div><h2 className="text-lg font-semibold text-slate-900">Create a deal</h2><p className="text-sm text-slate-500">Add an opportunity to the sales pipeline.</p></div>
+          <label className="block text-sm font-medium text-slate-700">Deal name<input required value={form.dealName} onChange={e => setForm({ ...form, dealName: e.target.value })} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-normal" /></label>
+          <label className="block text-sm font-medium text-slate-700">Company<input required value={form.companyName} onChange={e => setForm({ ...form, companyName: e.target.value })} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-normal" /></label>
+          <div className="grid grid-cols-2 gap-3"><label className="block text-sm font-medium text-slate-700">Value<input type="number" min="0" step="1" required value={form.value} onChange={e => setForm({ ...form, value: e.target.value })} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-normal" /></label><label className="block text-sm font-medium text-slate-700">Currency<select value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-normal"><option value="USD">USD</option><option value="PKR">PKR</option></select></label></div>
+          <label className="block text-sm font-medium text-slate-700">Contact email<input type="email" value={form.contactEmail} onChange={e => setForm({ ...form, contactEmail: e.target.value })} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-normal" /></label>
+          <label className="block text-sm font-medium text-slate-700">Initial stage<select value={form.stage} onChange={e => setForm({ ...form, stage: e.target.value })} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-normal">{PIPELINE_STAGES.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label>
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-3"><button type="button" onClick={() => setShowCreate(false)} className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700">Cancel</button><button disabled={saving} className="rounded-md bg-[#070B12] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Create deal'}</button></div>
+        </form>
+      </div>}
+    </div>
+  )
+}
+
+function DashboardView() {
+  const [stats, setStats] = useState<any>(null)
+  useEffect(() => {
+    api('/api/analytics').then(setStats).catch(() => {})
+    api('/api/messages/crm/calls?').then((r: any) => {
+      setStats((s: any) => ({ ...s, calls: r.counts }))
+    }).catch(() => {})
+  }, [])
+  if (!stats) return <div className="p-8 text-slate-400">Loading dashboard…</div>
+  const t = stats.totals || {}
+  const cards = [
+    { label: 'Total Leads', value: t.totalLeads || 0, icon: Users, color: 'text-[#070B12]' },
+    { label: 'Calls Today', value: t.callsToday || 0, icon: PhoneCall, color: 'text-[#070B12]' },
+    { label: 'Messages', value: t.totalMessages || 0, icon: MessageCircle, color: 'text-[#070B12]' },
+    { label: 'Active Campaigns', value: t.activeCampaigns || 0, icon: BarChart3, color: 'text-[#070B12]' },
+  ]
+  return (
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold text-[#070B12]">Dashboard</h1>
+        <p className="text-sm text-slate-500">One workspace. Every customer conversation.</p>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {cards.map((c) => {
+          const Icon = c.icon
+          return (
+            <div key={c.label} className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
+              <div className="flex items-center justify-between mb-1"><span className="text-xs text-slate-500">{c.label}</span><Icon className={`w-3.5 h-3.5 ${c.color}`} /></div>
+              <div className="text-2xl font-bold text-[#070B12]">{c.value}</div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Inbox ───────────────────────────────────────────────────────────────
+function InboxView() {
+  const [items, setItems] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('all')
+  useEffect(() => {
+    setLoading(true)
+    api(`/api/messages/crm/inbox?filter=${filter}`).then((r: any) => setItems(r.items || [])).catch(() => {}).finally(() => setLoading(false))
+  }, [filter])
+  return (
+    <div className="flex h-full">
+      <div className="w-full md:w-96 shrink-0 border-r border-slate-200 flex flex-col bg-white">
+        <div className="p-4 border-b border-slate-200">
+          <h1 className="text-xl font-semibold text-[#070B12] mb-3">Inbox</h1>
+          <div className="flex gap-1.5 flex-wrap">
+            {['all', 'unread', 'whatsapp'].map(f => (
+              <button key={f} onClick={() => setFilter(f)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium ${filter === f ? 'bg-[#070B12] text-white' : 'bg-[#0D131D] text-[#AAB4C3]'}`}>
+                {f.charAt(0).toUpperCase() + f.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {loading && <div className="p-6 text-center text-sm text-slate-500">Loading…</div>}
+          {!loading && items.length === 0 && <div className="p-6 text-center text-sm text-slate-500">No conversations.</div>}
+          {items.map((item) => (
+            <div key={item.id} className="px-4 py-3 border-b border-slate-100 hover:bg-slate-50 cursor-pointer">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#070B12] text-white flex items-center justify-center text-sm font-semibold shrink-0">
+                  {(item.name || '?').charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between gap-2"><span className="font-medium text-sm truncate">{item.name}</span>
+                    <span className="text-xs text-slate-400">{item.lastActivity ? new Date(item.lastActivity).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ''}</span></div>
+                  <div className="text-xs text-slate-500 truncate">{typeof item.lastMessage === 'string' ? item.lastMessage : (item.lastMessage?.body || '—')}</div>
+                  {item.unreadCount > 0 && <span className="inline-block mt-1 bg-[#F5C542] text-[#070B12] text-[10px] font-bold px-1.5 py-0.5 rounded-full">{item.unreadCount}</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="hidden md:flex flex-1 items-center justify-center bg-slate-50">
+        <div className="text-center text-slate-400"><MessageCircle className="w-12 h-12 mx-auto opacity-30" /><p className="text-sm mt-2">Select a conversation</p></div>
+      </div>
+    </div>
+  )
+}
+
+// ─── WhatsApp ────────────────────────────────────────────────────────────
+function WhatsAppView() {
+  const [conversations, setConversations] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [active, setActive] = useState<any | null>(null)
+  const [waLog, setWaLog] = useState<any[]>([])
+  const [reply, setReply] = useState('')
+  const [sending, setSending] = useState(false)
+  const [showNewChat, setShowNewChat] = useState(false)
+  const [newPhone, setNewPhone] = useState('')
+  const [newMessage, setNewMessage] = useState('')
+
+  async function loadConversations() {
+    setLoading(true)
+    try {
+      const r = await api('/api/messages/crm/whatsapp-conversations')
+      setConversations(r.items || [])
+    } catch {} finally { setLoading(false) }
+  }
+
+  async function openConversation(c: any) {
+    setActive(c)
+    try {
+      // Fetch WhatsApp message log for this phone number
+      const phone = c.phone || c.id?.replace('wa_', '') || ''
+      const r = await api(`/api/messages/crm/whatsapp-log?phone=${phone}`)
+      setWaLog(r.messages || [])
+    } catch { setWaLog([]) }
+  }
+
+  async function sendWhatsApp() {
+    if (!active || !reply.trim()) return
+    setSending(true)
+    try {
+      const phone = active.phone || active.id?.replace('wa_', '') || ''
+      await api('/api/messages/crm/whatsapp-send', {
+        method: 'POST', body: JSON.stringify({ to: phone, text: reply })
+      })
+      setReply('')
+      // Refresh log
+      const r = await api(`/api/messages/crm/whatsapp-log?phone=${phone}`)
+      setWaLog(r.messages || [])
+      loadConversations()
+    } catch (e: any) { alert(e.message) } finally { setSending(false) }
+  }
+
+  async function startNewChat() {
+    if (!newPhone.trim() || !newMessage.trim()) return
+    setSending(true)
+    try {
+      await api('/api/messages/crm/whatsapp-send', {
+        method: 'POST', body: JSON.stringify({ to: newPhone, text: newMessage })
+      })
+      setNewPhone('')
+      setNewMessage('')
+      setShowNewChat(false)
+      loadConversations()
+    } catch (e: any) { alert(e.message) } finally { setSending(false) }
+  }
+
+  useEffect(() => { loadConversations() }, [])
+
+  return (
+    <div className="flex h-full bg-white">
+      {/* Left — conversation list */}
+      <div className={`w-full md:w-80 shrink-0 border-r border-slate-200 flex flex-col ${active ? 'hidden md:flex' : 'flex'}`}>
+        <div className="p-4 border-b border-slate-200">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-semibold flex items-center gap-2 text-[#070B12]"><MessageCircle className="w-4 h-4 text-emerald-500" /> WhatsApp</h2>
+            <button onClick={() => setShowNewChat(!showNewChat)} className="text-xs bg-emerald-500 text-white px-2.5 py-1 rounded-md font-medium flex items-center gap-1">
+              <Plus className="w-3 h-3" /> New
+            </button>
+          </div>
+          <p className="text-xs text-slate-500">Real WhatsApp Business Cloud API</p>
+          {showNewChat && (
+            <div className="mt-3 space-y-2 bg-slate-50 p-3 rounded-lg">
+              <input type="tel" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} placeholder="Phone (e.g. +923001234567)"
+                className="w-full text-sm border border-slate-200 rounded-md p-2 focus:outline-none focus:border-emerald-500" />
+              <textarea value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="First message…" rows={2}
+                className="w-full text-sm border border-slate-200 rounded-md p-2 resize-none focus:outline-none focus:border-emerald-500" />
+              <button onClick={startNewChat} disabled={sending || !newPhone.trim() || !newMessage.trim()}
+                className="w-full bg-emerald-500 text-white text-sm py-1.5 rounded-md font-medium disabled:opacity-40">
+                {sending ? 'Sending…' : 'Send via WhatsApp'}
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {loading && <div className="p-6 text-center text-sm text-slate-500">Loading…</div>}
+          {!loading && conversations.length === 0 && (
+            <div className="p-6 text-center text-sm text-slate-500">
+              <MessageCircle className="w-10 h-10 mx-auto opacity-30 mb-2" />
+              No conversations yet.<br />
+              <span className="text-xs">Click "New" to start a WhatsApp chat with any number.</span>
+            </div>
+          )}
+          {conversations.map((c) => (
+            <button key={c.id} onClick={() => openConversation(c)}
+              className={`w-full text-left px-4 py-3 border-b border-slate-100 hover:bg-slate-50 ${active?.id === c.id ? 'bg-emerald-50' : ''}`}>
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-500/15 text-emerald-700 flex items-center justify-center text-sm font-semibold shrink-0">
+                  {(c.name || c.phone || '?').charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between gap-2">
+                    <span className="font-medium text-sm truncate text-[#070B12]">{c.name || c.phone}</span>
+                    {c.lastActivity && <span className="text-xs text-slate-400 shrink-0">{new Date(c.lastActivity).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>}
+                  </div>
+                  <div className="flex justify-between gap-2 mt-0.5">
+                    <span className="text-xs text-slate-500 truncate">
+                      {typeof c.lastMessage === 'string' ? c.lastMessage : (c.lastMessage?.body || c.direction === 'outbound' ? 'Sent' : '—')}
+                    </span>
+                    {c.unreadCount > 0 && <span className="bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">{c.unreadCount}</span>}
+                  </div>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Center — conversation view */}
+      <div className={`flex-1 flex flex-col min-w-0 ${active ? 'flex' : 'hidden md:flex'}`}>
+        {active ? (
+          <>
+            <div className="p-4 border-b border-slate-200 flex items-center gap-3">
+              <button className="md:hidden text-slate-500" onClick={() => setActive(null)}>←</button>
+              <div className="w-10 h-10 rounded-full bg-emerald-500/15 text-emerald-700 flex items-center justify-center text-sm font-semibold">
+                {(active.name || active.phone || '?').charAt(0)}
+              </div>
+              <div>
+                <div className="font-medium text-sm text-[#070B12]">{active.name || active.phone}</div>
+                <div className="text-xs text-slate-500">{active.phone}</div>
+              </div>
+              <div className="ml-auto flex items-center gap-1.5">
+                <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">WhatsApp Cloud API</span>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50">
+              {waLog.length === 0 && <div className="text-sm text-slate-500 text-center py-8">No messages yet. Send the first message below.</div>}
+              {waLog.map((m, i) => (
+                <div key={i} className={`flex ${(m.direction === 'outbound' || m.actor) ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[70%] rounded-2xl px-3 py-2 text-sm ${(m.direction === 'outbound' || m.actor) ? 'bg-emerald-500 text-white' : 'bg-white border border-slate-200'}`}>
+                    <div className="whitespace-pre-wrap">{m.body || m.kind || 'Message'}</div>
+                    <div className={`text-[10px] mt-0.5 ${(m.direction === 'outbound' || m.actor) ? 'text-emerald-100' : 'text-slate-400'}`}>
+                      {m.direction === 'outbound' || m.actor ? `Sent by ${m.actor || 'You'}` : 'Received'} · {m.at ? new Date(m.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ''}
+                      {m.ok === false && ' · FAILED'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-slate-200 p-3 bg-white flex gap-2">
+              <textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Type a WhatsApp message…" rows={1}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendWhatsApp() } }}
+                className="flex-1 text-sm border border-slate-200 rounded-lg p-2 resize-none focus:outline-none focus:border-emerald-500" />
+              <button onClick={sendWhatsApp} disabled={sending || !reply.trim()}
+                className="px-4 rounded-lg bg-emerald-500 text-white text-sm font-medium disabled:opacity-40 flex items-center gap-1">
+                <Send className="w-3.5 h-3.5" /> Send
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-slate-400">
+            <div className="text-center">
+              <MessageCircle className="w-12 h-12 mx-auto opacity-30" />
+              <p className="text-sm mt-2">Select a conversation or start a new one</p>
+              <p className="text-xs mt-1">Messages are sent via WhatsApp Business Cloud API</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Calls ───────────────────────────────────────────────────────────────
+function CallsView() {
+  const [calls, setCalls] = useState<any[]>([])
+  const [counts, setCounts] = useState<any>({ all: 0, incoming: 0, outgoing: 0, missed: 0 })
+  const [tab, setTab] = useState('all')
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    setLoading(true)
+    const qs = tab === 'incoming' ? '?direction=INBOUND' : tab === 'outgoing' ? '?direction=OUTBOUND' : tab === 'missed' ? '?status=MISSED' : ''
+    api(`/api/messages/crm/calls${qs}`).then((r: any) => { setCalls(r.calls || []); setCounts(r.counts || {}) }).catch(() => {}).finally(() => setLoading(false))
+  }, [tab])
+  return (
+    <div className="p-6 space-y-4">
+      <h1 className="text-2xl font-semibold text-[#070B12] flex items-center gap-2"><PhoneCall className="w-5 h-5" /> Calls</h1>
+      <div className="flex gap-2">
+        {['all','incoming','outgoing','missed'].map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium capitalize ${tab === t ? 'bg-[#070B12] text-white' : 'bg-[#0D131D] text-[#AAB4C3]'}`}>
+            {t} ({counts[t] || 0})
+          </button>
+        ))}
+      </div>
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+            <tr><th className="text-left font-medium px-3 py-2.5">Direction</th><th className="text-left font-medium px-3 py-2.5">Customer</th><th className="text-left font-medium px-3 py-2.5">Phone</th><th className="text-left font-medium px-3 py-2.5">Duration</th><th className="text-left font-medium px-3 py-2.5">Status</th><th className="text-left font-medium px-3 py-2.5">Time</th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {loading && <tr><td colSpan={6} className="text-center py-8 text-slate-500">Loading…</td></tr>}
+            {!loading && calls.length === 0 && <tr><td colSpan={6} className="text-center py-12 text-slate-500">No calls yet.</td></tr>}
+            {calls.map((c) => (
+              <tr key={c._id} className="hover:bg-slate-50">
+                <td className="px-3 py-2.5">{c.direction === 'INBOUND' ? <span className="text-blue-600 flex items-center gap-1"><PhoneIncoming className="w-3.5 h-3.5" /> In</span> : <span className="text-[#070B12] flex items-center gap-1"><PhoneOutgoing className="w-3.5 h-3.5" /> Out</span>}</td>
+                <td className="px-3 py-2.5 font-medium">{c.leadName || 'Unknown'}</td>
+                <td className="px-3 py-2.5 font-mono text-xs">{c.phone}</td>
+                <td className="px-3 py-2.5 font-mono text-xs">{String(Math.floor((c.durationSec||0)/60)).padStart(2,'0')}:{String((c.durationSec||0)%60).padStart(2,'0')}</td>
+                <td className="px-3 py-2.5"><span className="text-xs px-2 py-0.5 rounded bg-slate-100">{c.status}</span></td>
+                <td className="px-3 py-2.5 text-xs text-slate-500">{c.startedAt ? new Date(c.startedAt).toLocaleString() : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ─── Dialer ──────────────────────────────────────────────────────────────
+function DialerView() {
+  const [number, setNumber] = useState('')
+  const [call, setCall] = useState<any>(null)
+  const [callStatus, setCallStatus] = useState<'IDLE'|'CALLING'|'RINGING'|'CONNECTED'|'ENDED'>('IDLE')
+  const [timer, setTimer] = useState(0)
+  const timerRef = useRef<any>(null)
+
+  async function startCall() {
+    if (!number) return
+    try {
+      const r = await api('/api/messages/crm/calls', { method: 'POST', body: JSON.stringify({ to: number }) })
+      setCall(r); setCallStatus('CALLING')
+    } catch (e: any) { alert(e.message) }
+  }
+  async function endCall() {
+    if (!call?.callId) return
+    try { await api(`/api/messages/crm/calls/${call.callId}/end`, { method: 'POST', body: JSON.stringify({}) }) } catch {}
+    setCallStatus('ENDED'); setCall(null); setCallStatus('IDLE')
+  }
+  useEffect(() => {
+    if (callStatus === 'CONNECTED') { timerRef.current = setInterval(() => setTimer(t => t+1), 1000) }
+    else { if (timerRef.current) clearInterval(timerRef.current); setTimer(0) }
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [callStatus])
+  useEffect(() => {
+    if (!call?.callId || callStatus === 'IDLE') return
+    const t = setInterval(async () => {
+      try { const r = await api(`/api/messages/crm/calls/${call.callId}`); if (r.call.status === 'RINGING') setCallStatus('RINGING'); if (r.call.status === 'CONNECTED') setCallStatus('CONNECTED'); if (r.call.status === 'ENDED') { setCallStatus('IDLE'); setCall(null) } } catch {}
+    }, 1000)
+    return () => clearInterval(t)
+  }, [call?.callId, callStatus])
+
+  const KEYS = [{d:'1',s:''},{d:'2',s:'ABC'},{d:'3',s:'DEF'},{d:'4',s:'GHI'},{d:'5',s:'JKL'},{d:'6',s:'MNO'},{d:'7',s:'PQRS'},{d:'8',s:'TUV'},{d:'9',s:'WXYZ'},{d:'*',s:''},{d:'0',s:'+'},{d:'#',s:''}]
+
+  return (
+    <div className="h-full flex items-center justify-center bg-gradient-to-br from-[#070B12] to-[#0D131D]">
+      <div className="w-full max-w-sm space-y-5 p-6">
+        <div className="text-center"><div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[#F5C542] mb-2"><Phone className="w-6 h-6 text-[#070B12]" /></div>
+          <h1 className="text-2xl font-bold text-white">Phone Dialer</h1></div>
+        <input value={number} onChange={e => setNumber(e.target.value)} placeholder="Enter phone number"
+          className="w-full bg-[#0D131D] border border-[rgba(255,255,255,0.08)] text-white text-lg font-mono text-center rounded-md py-2.5 focus:outline-none focus:border-[#F4C542]" />
+        <div className="grid grid-cols-3 gap-2.5">
+          {KEYS.map(k => (
+            <button key={k.d} onClick={() => setNumber(n => n + k.d)}
+              className="h-16 rounded-xl bg-gradient-to-br from-[#0D131D] to-[#070B12] border border-[rgba(255,255,255,0.06)] flex flex-col items-center justify-center text-white hover:border-[#F4C542]/40 active:scale-95 transition-all">
+              <span className="text-2xl font-semibold">{k.d}</span>{k.s && <span className="text-[10px] text-[#6B7689]">{k.s}</span>}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-4 gap-2.5">
+          <button className="h-12 rounded-xl bg-[#0D131D] border border-[rgba(255,255,255,0.06)] flex items-center justify-center text-[#AAB4C3]"><Users className="w-5 h-5" /></button>
+          <button onClick={startCall} disabled={callStatus !== 'IDLE'}
+            className={`h-12 rounded-xl flex items-center justify-center text-white font-medium ${callStatus !== 'IDLE' ? 'bg-slate-600 opacity-50' : 'bg-[#F5C542] text-[#070B12] hover:opacity-90'}`}>
+            <PhoneCall className="w-5 h-5 mr-1.5" /><span className="text-sm">Call</span>
+          </button>
+          <button className="h-12 rounded-xl bg-emerald-600 flex items-center justify-center text-white"><MessageCircle className="w-5 h-5" /></button>
+          <button onClick={() => setNumber(n => n.slice(0,-1))} className="h-12 rounded-xl bg-[#0D131D] border border-[rgba(255,255,255,0.06)] flex items-center justify-center text-[#AAB4C3]"><ChevronLeft className="w-5 h-5" /></button>
+        </div>
+        {call && callStatus !== 'IDLE' && (
+          <div className="bg-[#0D131D] rounded-xl p-4 text-center text-white">
+            <div className="text-sm font-medium">{callStatus === 'CALLING' ? 'Calling…' : callStatus === 'RINGING' ? 'Ringing…' : callStatus === 'CONNECTED' ? `${String(Math.floor(timer/60)).padStart(2,'0')}:${String(timer%60).padStart(2,'0')}` : ''}</div>
+            {callStatus === 'CONNECTED' && <button onClick={endCall} className="mt-3 bg-red-600 text-white px-4 py-1.5 rounded-md text-sm font-medium"><Square className="w-3 h-3 inline mr-1" /> End Call</button>}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Leads ───────────────────────────────────────────────────────────────
+function LeadsView() {
+  const [leads, setLeads] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    // Fetch customers from admin users API + orders for lead data
+    Promise.all([
+      api('/api/admin/users').catch(() => ({ users: [] })),
+      api('/api/admin/orders').catch(() => ({ orders: [] })),
+    ]).then(([usersRes, ordersRes]: any) => {
+      const users = usersRes.users || []
+      const orders = ordersRes.orders || []
+      // Build leads from users who have orders or conversations
+      const leadsMap = new Map<string, any>()
+      for (const u of users) {
+        const userOrders = orders.filter((o: any) => o.customerEmail === u.email || o.customerId === String(u._id))
+        leadsMap.set(u.email || String(u._id), {
+          id: String(u._id),
+          name: u.name || u.email || 'Unknown',
+          email: u.email || '',
+          phone: u.phone || '',
+          whatsapp: u.whatsapp || '',
+          city: u.city || '',
+          country: u.country || '',
+          status: userOrders.length > 0 ? 'CONVERTED' : 'NEW',
+          score: userOrders.length * 10,
+          totalOrders: userOrders.length,
+          totalSpent: userOrders.reduce((s: number, o: any) => s + (o.total || 0), 0),
+          lastOrder: userOrders[0]?.createdAt || u.createdAt,
+          createdAt: u.createdAt,
+        })
+      }
+      // Also add customers from orders that don't have user accounts
+      for (const o of orders) {
+        const key = o.customerEmail || o.customerName
+        if (key && !leadsMap.has(key)) {
+          leadsMap.set(key, {
+            id: o._id,
+            name: o.customerName || 'Unknown',
+            email: o.customerEmail || '',
+            phone: o.customerPhone || '',
+            whatsapp: o.customerWhatsapp || '',
+            city: '', country: '',
+            status: 'CONTACTED',
+            score: 5,
+            totalOrders: 1,
+            totalSpent: o.total || 0,
+            lastOrder: o.createdAt,
+            createdAt: o.createdAt,
+          })
+        }
+      }
+      setLeads(Array.from(leadsMap.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()))
+    }).catch(() => {}).finally(() => setLoading(false))
+  }, [])
+
+  const filtered = leads.filter(l =>
+    !search || (l.name || '').toLowerCase().includes(search.toLowerCase()) ||
+    (l.email || '').toLowerCase().includes(search.toLowerCase()) ||
+    (l.phone || '').includes(search)
+  )
+
+  return (
+    <div className="p-6 space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-[#070B12] flex items-center gap-2"><Users className="w-5 h-5" /> Leads</h1>
+          <p className="text-sm text-slate-500">{leads.length} leads from customers and orders</p>
+        </div>
+        <div className="relative w-64">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input type="text" placeholder="Search leads…" value={search} onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:border-[#0B1220]" />
+        </div>
+      </div>
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+            <tr>
+              <th className="text-left font-medium px-3 py-2.5">Name</th>
+              <th className="text-left font-medium px-3 py-2.5">Email</th>
+              <th className="text-left font-medium px-3 py-2.5">Phone</th>
+              <th className="text-left font-medium px-3 py-2.5">Orders</th>
+              <th className="text-left font-medium px-3 py-2.5">Total Spent</th>
+              <th className="text-left font-medium px-3 py-2.5">Status</th>
+              <th className="text-left font-medium px-3 py-2.5">Score</th>
+              <th className="text-left font-medium px-3 py-2.5">Joined</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {loading && <tr><td colSpan={8} className="text-center py-8 text-slate-500">Loading…</td></tr>}
+            {!loading && filtered.length === 0 && <tr><td colSpan={8} className="text-center py-12 text-slate-500">No leads yet.</td></tr>}
+            {filtered.map((l) => (
+              <tr key={l.id} className="hover:bg-slate-50">
+                <td className="px-3 py-2.5 font-medium text-[#070B12]">{l.name}</td>
+                <td className="px-3 py-2.5 text-slate-600">{l.email || '—'}</td>
+                <td className="px-3 py-2.5 text-slate-600">{l.phone || l.whatsapp || '—'}</td>
+                <td className="px-3 py-2.5 tabular-nums">{l.totalOrders}</td>
+                <td className="px-3 py-2.5 font-medium">Rs {l.totalSpent.toLocaleString()}</td>
+                <td className="px-3 py-2.5">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    l.status === 'CONVERTED' ? 'bg-emerald-100 text-emerald-700' :
+                    l.status === 'CONTACTED' ? 'bg-blue-100 text-blue-700' :
+                    'bg-[#0D131D] text-[#AAB4C3]'
+                  }`}>{l.status}</span>
+                </td>
+                <td className="px-3 py-2.5 tabular-nums font-semibold">{l.score}</td>
+                <td className="px-3 py-2.5 text-xs text-slate-500">{l.createdAt ? new Date(l.createdAt).toLocaleDateString() : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ─── Customers ───────────────────────────────────────────────────────────
+function CustomersView() {
+  const [customers, setCustomers] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<any | null>(null)
+  const [timeline, setTimeline] = useState<any[]>([])
+  const [notes, setNotes] = useState<any[]>([])
+  const [newNote, setNewNote] = useState('')
+  const [tab, setTab] = useState<'timeline' | 'notes' | 'orders'>('timeline')
+
+  useEffect(() => {
+    Promise.all([
+      api('/api/admin/users').catch(() => ({ users: [] })),
+      api('/api/admin/orders').catch(() => ({ orders: [] })),
+    ]).then(([usersRes, ordersRes]: any) => {
+      const users = usersRes.users || []
+      const orders = ordersRes.orders || []
+      const list = users.map((u: any) => {
+        const userOrders = orders.filter((o: any) => o.customerEmail === u.email || o.customerId === String(u._id))
+        return {
+          id: String(u._id), name: u.name || u.email, email: u.email || '',
+          phone: u.phone || '', whatsapp: u.whatsapp || '',
+          totalOrders: userOrders.length,
+          totalSpent: userOrders.reduce((s: number, o: any) => s + (o.total || 0), 0),
+          orders: userOrders,
+          createdAt: u.createdAt, lastLogin: u.lastLogin,
+        }
+      })
+      setCustomers(list)
+    }).catch(() => {}).finally(() => setLoading(false))
+  }, [])
+
+  async function openCustomer(c: any) {
+    setSelected(c)
+    setTab('timeline')
+    // Fetch timeline and notes
+    try {
+      const [tl, nt] = await Promise.all([
+        api(`/api/messages/crm/timeline/${c.id}`).catch(() => ({ timeline: [] })),
+        api(`/api/messages/crm/notes?leadId=${c.id}`).catch(() => ({ notes: [] })),
+      ])
+      setTimeline(tl.timeline || [])
+      setNotes(nt.notes || [])
+    } catch {}
+  }
+
+  async function addNote() {
+    if (!newNote.trim() || !selected) return
+    try {
+      await api('/api/messages/crm/notes', { method: 'POST', body: JSON.stringify({ leadId: selected.id, body: newNote }) })
+      setNewNote('')
+      const nt = await api(`/api/messages/crm/notes?leadId=${selected.id}`)
+      setNotes(nt.notes || [])
+    } catch (e: any) { alert(e.message) }
+  }
+
+  const filtered = customers.filter(c =>
+    !search || (c.name || '').toLowerCase().includes(search.toLowerCase()) || (c.email || '').toLowerCase().includes(search.toLowerCase())
+  )
+
+  return (
+    <div className="flex h-full">
+      {/* Left — customer list */}
+      <div className="w-full lg:w-80 shrink-0 border-r border-slate-200 bg-white flex flex-col">
+        <div className="p-4 border-b border-slate-200">
+          <h1 className="text-xl font-semibold text-[#070B12] mb-3">Customers</h1>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input type="text" placeholder="Search customers…" value={search} onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:border-[#0B1220]" />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {loading && <div className="p-6 text-center text-sm text-slate-500">Loading…</div>}
+          {!loading && filtered.length === 0 && <div className="p-6 text-center text-sm text-slate-500">No customers.</div>}
+          {filtered.map((c) => (
+            <button key={c.id} onClick={() => openCustomer(c)}
+              className={`w-full text-left px-4 py-3 border-b border-slate-100 hover:bg-slate-50 transition ${selected?.id === c.id ? 'bg-amber-50' : ''}`}>
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#070B12] text-white flex items-center justify-center text-sm font-semibold shrink-0">
+                  {(c.name || '?').charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm truncate text-[#070B12]">{c.name}</div>
+                  <div className="text-xs text-slate-500 truncate">{c.email}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">{c.totalOrders} orders · Rs {c.totalSpent.toLocaleString()}</div>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Right — customer detail */}
+      {selected ? (
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Header */}
+          <div className="p-4 border-b border-slate-200 bg-white flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-[#070B12] text-white flex items-center justify-center text-lg font-semibold">
+                {(selected.name || '?').charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <div className="font-semibold text-[#070B12]">{selected.name}</div>
+                <div className="text-xs text-slate-500">{selected.email} · {selected.phone || 'No phone'}</div>
+              </div>
+            </div>
+            <div className="flex gap-1.5">
+              <button className="text-xs px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-[#070B12] font-medium flex items-center gap-1">
+                <PhoneCall className="w-3.5 h-3.5" /> Call
+              </button>
+              <button className="text-xs px-3 py-1.5 rounded-md bg-emerald-100 hover:bg-emerald-200 text-emerald-700 font-medium flex items-center gap-1">
+                <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+              </button>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="border-b border-slate-200 px-4 flex gap-1">
+            {['timeline', 'notes', 'orders'].map(t => (
+              <button key={t} onClick={() => setTab(t as any)}
+                className={`px-3 py-2 text-sm font-medium capitalize border-b-2 ${tab === t ? 'border-[#F4C542] text-[#070B12]' : 'border-transparent text-slate-500'}`}>
+                {t}
+              </button>
+            ))}
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {tab === 'timeline' && (
+              <div className="space-y-3">
+                {timeline.length === 0 ? <div className="text-center py-8 text-slate-400 text-sm">No activity yet.</div> :
+                  timeline.map((group: any) => (
+                    <div key={group.date}>
+                      <div className="text-xs font-semibold text-slate-400 uppercase mb-2">{new Date(group.date).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}</div>
+                      {group.events.map((ev: any) => (
+                        <div key={ev.id} className="flex items-start gap-2.5 mb-2">
+                          <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center shrink-0 mt-0.5">
+                            {ev.type.includes('CALL') ? <PhoneCall className="w-3.5 h-3.5 text-slate-500" /> :
+                             ev.type.includes('MESSAGE') ? <MessageCircle className="w-3.5 h-3.5 text-slate-500" /> :
+                             ev.type === 'NOTE' ? <StickyNote className="w-3.5 h-3.5 text-slate-500" /> :
+                             <CheckSquare className="w-3.5 h-3.5 text-slate-500" />}
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex justify-between">
+                              <span className="text-sm font-medium text-[#070B12]">{ev.title}</span>
+                              <span className="text-xs text-slate-400">{new Date(ev.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                            {ev.description && <p className="text-xs text-slate-500 mt-0.5">{ev.description}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+              </div>
+            )}
+            {tab === 'notes' && (
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <textarea value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="Add an internal note…" rows={2}
+                    className="flex-1 text-sm border border-slate-200 rounded-md p-2 resize-none focus:outline-none focus:border-[#0B1220]" />
+                  <button onClick={addNote} disabled={!newNote.trim()} className="px-3 rounded-md bg-[#070B12] text-white text-sm font-medium disabled:opacity-40">Add</button>
+                </div>
+                {notes.length === 0 ? <div className="text-center py-8 text-slate-400 text-sm">No notes yet.</div> :
+                  notes.map((n) => (
+                    <div key={n._id} className="bg-white border border-slate-200 rounded-lg p-3">
+                      <div className="text-xs text-slate-500 mb-1">{n.employeeName} · {new Date(n.createdAt).toLocaleString()}</div>
+                      <div className="text-sm">{n.body}</div>
+                    </div>
+                  ))}
+              </div>
+            )}
+            {tab === 'orders' && (
+              <div className="space-y-2">
+                {selected.orders.length === 0 ? <div className="text-center py-8 text-slate-400 text-sm">No orders.</div> :
+                  selected.orders.map((o: any) => (
+                    <div key={o._id} className="bg-white border border-slate-200 rounded-lg p-3 flex items-center justify-between">
+                      <div>
+                        <div className="font-mono text-xs text-[#070B12]">{o.orderNumber}</div>
+                        <div className="text-xs text-slate-500">{new Date(o.createdAt).toLocaleDateString()} · {o.paymentStatus}</div>
+                      </div>
+                      <div className="font-semibold text-[#070B12]">Rs {o.total?.toLocaleString()}</div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="hidden lg:flex flex-1 items-center justify-center bg-slate-50">
+          <div className="text-center text-slate-400">
+            <UserCircle2 className="w-12 h-12 mx-auto opacity-30" />
+            <p className="text-sm mt-2">Select a customer to view their profile</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+function TasksView() {
+  const [tasks, setTasks] = useState<any[]>([])
+  const [error, setError] = useState('')
+  const load = useCallback(() => api('/api/messages/crm/tasks?status=OPEN').then((r:any) => setTasks(r.tasks||[])).catch((e:any) => setError(e.message || 'Could not load tasks.')), [])
+  useEffect(() => { load() }, [load])
+  const completeTask = async (task: any) => {
+    setError('')
+    try {
+      await api(`/api/messages/crm/tasks/${task._id}`, { method: 'PUT', body: JSON.stringify({ status: 'COMPLETED' }) })
+      setTasks(current => current.filter(item => item._id !== task._id))
+    } catch (e: any) { setError(e.message || 'Could not complete task.') }
+  }
+  return (
+    <div className="p-6 space-y-4">
+      <h1 className="text-2xl font-semibold text-[#070B12] flex items-center gap-2"><CheckSquare className="w-5 h-5" /> Tasks</h1>
+      {error && <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>}
+      {tasks.length === 0 ? <div className="text-center py-12 text-slate-400"><CheckSquare className="w-10 h-10 mx-auto opacity-30 mb-2" /><p className="text-sm">No open tasks.</p></div> :
+        <div className="space-y-2">{tasks.map(t => (
+          <div key={t._id} className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3">
+            <button type="button" aria-label={`Complete task: ${t.title}`} onClick={() => completeTask(t)} className="flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-slate-300 text-white hover:border-emerald-600 hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"><Check className="h-3 w-3" /></button>
+            <div className="flex-1"><div className="font-medium text-sm text-[#070B12]">{t.title}</div><div className="text-xs text-slate-500">{t.priority} • {t.employeeName}</div></div>
+          </div>
+        ))}</div>}
+    </div>
+  )
+}
+function FollowupsView() {
+  const [followups, setFollowups] = useState<any[]>([])
+  useEffect(() => { api('/api/messages/crm/followups?upcoming=true').then((r:any) => setFollowups(r.followups||[])).catch(() => {}) }, [])
+  return (
+    <div className="p-6 space-y-4">
+      <h1 className="text-2xl font-semibold text-[#070B12] flex items-center gap-2"><CalendarClock className="w-5 h-5" /> Follow-ups</h1>
+      {followups.length === 0 ? <div className="text-center py-12 text-slate-400"><CalendarClock className="w-10 h-10 mx-auto opacity-30 mb-2" /><p className="text-sm">No upcoming follow-ups.</p></div> :
+        <div className="space-y-2">{followups.map(f => (
+          <div key={f._id} className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3">
+            <CalendarClock className="w-5 h-5 text-[#F4C542]" />
+            <div className="flex-1"><div className="font-medium text-sm text-[#070B12]">{f.leadName || 'Unknown'}</div><div className="text-xs text-slate-500">{f.scheduledAt ? new Date(f.scheduledAt).toLocaleString() : ''} • {f.channel}</div></div>
+          </div>
+        ))}</div>}
+    </div>
+  )
+}
+function EmployeesView() {
+  const [employees, setEmployees] = useState<any[]>([])
+  useEffect(() => { api('/api/messages/crm/employees').then((r:any) => setEmployees(r.employees||[])).catch(() => {}) }, [])
+  return (
+    <div className="p-6 space-y-4">
+      <h1 className="text-2xl font-semibold text-[#070B12] flex items-center gap-2"><IdCard className="w-5 h-5" /> Employees</h1>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {employees.map(e => (
+          <div key={e.id} className="bg-white border border-slate-200 rounded-lg p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-[#070B12] text-white flex items-center justify-center font-semibold">{e.name?.charAt(0)}</div>
+              <div><div className="font-medium text-sm text-[#070B12]">{e.name}</div><div className="text-xs text-slate-500">{e.title || e.role}</div></div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="bg-slate-50 rounded p-1.5"><div className="text-slate-500 uppercase text-[10px]">Calls</div><div className="font-semibold">{e.stats?.callsMade || 0}</div></div>
+              <div className="bg-slate-50 rounded p-1.5"><div className="text-slate-500 uppercase text-[10px]">Messages</div><div className="font-semibold">{e.stats?.messagesSent || 0}</div></div>
+              <div className="bg-slate-50 rounded p-1.5"><div className="text-slate-500 uppercase text-[10px]">Tasks</div><div className="font-semibold">{e.stats?.activeTasks || 0}</div></div>
+              <div className="bg-slate-50 rounded p-1.5"><div className="text-slate-500 uppercase text-[10px]">Follow-ups</div><div className="font-semibold">{e.stats?.followupsScheduled || 0}</div></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function PlaceholderView({ icon: Icon, title, desc }: any) {
+  return (
+    <div className="p-6">
+      <h1 className="text-2xl font-semibold text-[#070B12] mb-2">{title}</h1>
+      <p className="text-sm text-slate-500 mb-8">{desc}</p>
+      <div className="bg-white border border-slate-200 rounded-lg p-12 text-center text-slate-400">
+        <Icon className="w-12 h-12 mx-auto opacity-30 mb-3" />
+        <p className="text-sm">This view is being populated with data from your MongoDB.</p>
+      </div>
+    </div>
+  )
+}

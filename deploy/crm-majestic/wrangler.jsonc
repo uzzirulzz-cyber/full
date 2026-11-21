@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "playbeat-crm-majestic",
+  "account_id": "334b708ffc14a0b4d48ebfa47634b423",
+  "main": "worker.js",
+  "compatibility_date": "2025-03-01",
+  "services": [
+    {
+      "binding": "CRM",
+      "service": "playbeat-crm"
+    }
+  ],
+  "assets": {
+    "directory": "./assets"
+  }
+}
