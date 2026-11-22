@@ -1,8 +1,8 @@
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { adminLogin, setAdminToken } from '../lib/adminAuth';
-import '../admin-corona/corona.css';
-import '../admin-corona/integration.css';
+import '../celestial-admin/celestial.css';
+import '../celestial-admin/integration.css';
 
 interface AdminGateProps {
   onUnlocked: () => void;
@@ -32,14 +32,15 @@ export function AdminGate({ onUnlocked, onBackToStorefront }: AdminGateProps) {
   };
 
   return (
-    <div className="corona-admin">
-      <div className="d-flex align-items-center auth px-0">
+    <div className="celestial-admin container-scroller">
+      <div className="container-fluid page-body-wrapper full-page-wrapper">
+        <div className="content-wrapper d-flex align-items-center auth px-0">
         <div className="row w-100 mx-0">
           <div className="col-lg-4 mx-auto">
-            <div className="card text-left py-5 px-4 px-sm-5">
+            <div className="auth-form-light text-left py-5 px-4 px-sm-5">
               <div className="brand-logo"><img src="/assets/playbeat/logo-header.webp" alt="Playbeat Digital" /></div>
               <h4>Enterprise administration</h4>
-              <h6 className="font-weight-light">Sign in to continue to the Corona workspace.</h6>
+              <h6 className="font-weight-light">Sign in to continue to the Celestial workspace.</h6>
 
               {errorMsg && <div className="alert alert-danger mt-3" role="alert">{errorMsg}</div>}
 
@@ -73,6 +74,7 @@ export function AdminGate({ onUnlocked, onBackToStorefront }: AdminGateProps) {
               </form>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

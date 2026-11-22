@@ -34,13 +34,13 @@ import { IntegrationsView, type WebhookLogEntry } from './IntegrationsView';
 import { IzokoCrmView } from './IzokoCrmView';
 import { OrdersView } from './OrdersView';
 import { PlaybeatLivePanel } from './PlaybeatLivePanel';
-import { CoronaDashboard } from './admin-corona/CoronaDashboard';
-import { CoronaNavbar } from './admin-corona/CoronaNavbar';
-import { CoronaSidebar } from './admin-corona/CoronaSidebar';
-import { CoronaPageHeader } from './admin-corona/CoronaPageHeader';
-import { adminTabFromLocation, routeForAdminTab } from './admin-corona/routes';
-import '../admin-corona/corona.css';
-import '../admin-corona/integration.css';
+import { CelestialDashboard } from './celestial-admin/CelestialDashboard';
+import { CelestialNavbar } from './celestial-admin/CelestialNavbar';
+import { CelestialSidebar } from './celestial-admin/CelestialSidebar';
+import { CelestialPageHeader } from './celestial-admin/CelestialPageHeader';
+import { adminTabFromLocation, routeForAdminTab } from './celestial-admin/routes';
+import '../celestial-admin/celestial.css';
+import '../celestial-admin/integration.css';
 
 export type AdminTab = 'overview' | 'live' | 'extraction' | 'sections' | 'orders' | 'crm' | 'crm-platform' | 'diagnostics';
 type SectionManagerTab = 'section1' | 'section2' | 'section3-channels' | 'section3-plans';
@@ -395,20 +395,20 @@ export function AdminPanelView({
   };
 
   return (
-    <div className="corona-admin container-scroller">
-      <CoronaSidebar
+    <div className="celestial-admin container-scroller">
+      <CelestialSidebar
         activeTab={activeTab}
+        search={adminSearch}
+        onSearchChange={setAdminSearch}
         onNavigate={navigateAdmin}
         onBackToStorefront={onBackToStorefront}
         onLock={() => void handleLockAdmin()}
       />
       <div className="container-fluid page-body-wrapper">
-        <CoronaNavbar
+        <CelestialNavbar
           isSyncing={isSyncing}
-          search={adminSearch}
           inquiries={serviceInquiries}
           orders={orders}
-          onSearchChange={setAdminSearch}
           onNavigate={navigateAdmin}
           onSync={() => void onSyncElectronicFirst()}
           onBackToStorefront={onBackToStorefront}
@@ -416,17 +416,19 @@ export function AdminPanelView({
         />
         <div className="main-panel">
           <main className="content-wrapper">
-            {activeTab !== 'overview' && <CoronaPageHeader activeTab={activeTab} />}
+            {activeTab !== 'overview' && <CelestialPageHeader activeTab={activeTab} />}
 
       {activeTab === 'overview' && (
-        <div className="corona-overview">
-          <CoronaDashboard
+        <div className="celestial-dashboard">
+          <CelestialDashboard
             digitalProducts={digitalProducts}
             businessServices={businessServices}
             liveTvChannels={liveTvChannels}
             liveTvPlans={liveTvPlans}
             orders={orders}
             serviceInquiries={serviceInquiries}
+            readiness={readiness}
+            syncStatus={syncStatus}
             onNavigate={navigateAdmin}
           />
           <div className="row"><div className="col-12">
@@ -1087,7 +1089,7 @@ export function AdminPanelView({
             <div className="container-fluid">
               <div className="d-sm-flex justify-content-center justify-content-sm-between py-2 w-100">
                 <span className="text-muted text-center text-sm-left d-block d-sm-inline-block">© {new Date().getFullYear()} Playbeat Digital · Connected storefront administration</span>
-                <span className="float-none float-sm-right d-block mt-1 mt-sm-0 text-center">Corona Bootstrap UI by BootstrapDash</span>
+                <span className="float-none float-sm-right d-block mt-1 mt-sm-0 text-center">Celestial Bootstrap UI by BootstrapDash</span>
               </div>
             </div>
           </footer>

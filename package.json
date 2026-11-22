@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "tsx server.ts",
     "start": "node server.ts",
-    "build:corona": "node scripts/scope-corona-css.mjs",
-    "prebuild": "npm run build:corona",
+    "build:celestial": "node scripts/scope-celestial-css.mjs",
+    "prebuild": "npm run build:celestial",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",

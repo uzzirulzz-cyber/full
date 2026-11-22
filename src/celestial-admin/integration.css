@@ -1,0 +1,206 @@
+.celestial-admin.container-scroller {
+  display: flex;
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background: #f3f3f3;
+}
+
+.celestial-admin .main-panel {
+  width: 100%;
+  height: auto;
+  margin-left: 0;
+  overflow-y: visible;
+}
+
+.celestial-admin .edge,
+.celestial-admin .edge-solid,
+.celestial-admin .pa-card {
+  border: 1px solid #2c2e33;
+  background: #191c24;
+  box-shadow: 20px 19px 34px -15px rgba(0, 0, 0, 0.5);
+  color: #fff;
+}
+
+.celestial-admin .pa-btn {
+  border: 1px solid #2c2e33;
+  border-radius: 0.25rem;
+  background: #12151e;
+  color: #fff;
+  cursor: pointer;
+}
+
+.celestial-admin .pa-btn-gold {
+  border: 0;
+  border-radius: 0.25rem;
+  background: #0090e7;
+  color: #fff;
+}
+
+.celestial-admin .celestial-avatar {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #759bff, #843cf6);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.celestial-admin .celestial-payment-ring {
+  position: relative;
+  width: 176px;
+  height: 176px;
+  margin: 0 auto;
+  border-radius: 50%;
+}
+
+.celestial-admin .celestial-ring-center {
+  position: absolute;
+  inset: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.celestial-admin .celestial-ring-center strong {
+  color: #0f1531;
+  font-size: 30px;
+}
+
+.celestial-admin .celestial-ring-center span {
+  color: #686868;
+  font-size: 11px;
+}
+
+.celestial-admin .celestial-dropdown {
+  position: relative;
+}
+
+.celestial-admin .celestial-dropdown > summary {
+  list-style: none;
+}
+
+.celestial-admin .celestial-dropdown > summary::-webkit-details-marker {
+  display: none;
+}
+
+.celestial-admin .celestial-dropdown > .dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 100;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+}
+
+.celestial-admin .celestial-dropdown > .dropdown-menu button {
+  color: inherit;
+}
+
+.celestial-admin .celestial-revenue-chart {
+  display: flex;
+  height: 220px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 30px;
+}
+
+.celestial-admin .celestial-revenue-column {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  align-self: stretch;
+}
+
+.celestial-admin .celestial-revenue-column > span,
+.celestial-admin .celestial-revenue-column > small {
+  color: #686868;
+  font-size: 10px;
+}
+
+.celestial-admin .celestial-revenue-track {
+  display: flex;
+  width: 100%;
+  max-width: 48px;
+  flex: 1;
+  align-items: flex-end;
+  margin: 8px 0;
+  border-radius: 4px 4px 0 0;
+  background: rgba(120, 89, 223, 0.08);
+}
+
+.celestial-admin .celestial-revenue-bar {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, #759bff, #843cf6);
+}
+
+.celestial-admin .celestial-order-row {
+  display: grid;
+  grid-template-columns: 42px 1fr 24px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  color: #686868;
+  font-size: 11px;
+}
+
+.celestial-admin .celestial-order-row strong {
+  color: #0f1531;
+  text-align: right;
+}
+
+.celestial-admin .celestial-spin {
+  display: inline-block;
+  animation: celestialSpin 0.9s linear infinite;
+}
+
+.celestial-admin form.card.forms-sample {
+  padding: 1.5rem;
+}
+
+.celestial-admin .forms-sample .pb-input {
+  display: block;
+  width: 100%;
+  border: 1px solid #2c2e33;
+  border-radius: 2px;
+  background: #12151e;
+  color: #fff;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.celestial-admin .forms-sample .pb-input:focus {
+  border-color: #0090e7;
+  box-shadow: 0 0 0 3px rgba(0, 144, 231, 0.12);
+}
+
+@keyframes celestialSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 767.98px) {
+  .celestial-admin .celestial-dropdown > .dropdown-menu {
+    position: fixed;
+    top: 64px;
+    right: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .celestial-admin .celestial-spin {
+    animation: none;
+  }
+}
