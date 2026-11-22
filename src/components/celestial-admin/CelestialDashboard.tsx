@@ -9,6 +9,7 @@ import type {
   ServiceInquiry,
 } from '../../types/store';
 import type { AdminTab } from '../AdminPanelView';
+import { GoogleMonetizationPanel } from './GoogleMonetizationPanel';
 
 interface CelestialDashboardProps {
   digitalProducts: Product[];
@@ -163,6 +164,8 @@ export function CelestialDashboard({
           </div></div>
         </div>
       </div>
+
+      <GoogleMonetizationPanel />
 
       <div className="row">
         <div className="col-xl-3 d-flex grid-margin stretch-card">

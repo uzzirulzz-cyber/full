@@ -383,6 +383,294 @@ async function handleHlsProxy(request) {
 }
 
 // ---------------------------------------------------------------------------
+// Google AdSense and GA4 reporting
+// ---------------------------------------------------------------------------
+
+const GOOGLE_MONETIZATION_DOMAINS = [
+  'playbeat.digital',
+  'playbeat.live',
+  'playbeatarena.asia',
+  'playbeatdigital.world',
+  'playbeattv.buzz',
+];
+const ADSENSE_METRICS = [
+  'ESTIMATED_EARNINGS',
+  'PAGE_VIEWS_RPM',
+  'IMPRESSIONS',
+  'CLICKS',
+  'IMPRESSIONS_CTR',
+];
+const GA4_METRICS = ['sessions', 'totalUsers', 'screenPageViews', 'engagementRate'];
+let googleTokenCache = { key: '', token: '', expiresAt: 0 };
+
+function googleDateRange(days) {
+  const end = new Date();
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - (days - 1));
+  const iso = (date) => date.toISOString().slice(0, 10);
+  return { start: iso(start), end: iso(end) };
+}
+
+function googleConfiguration(env) {
+  const oauth = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REFRESH_TOKEN);
+  let properties = {};
+  let propertyConfigError = '';
+  if (env.GOOGLE_GA4_PROPERTIES) {
+    try {
+      const parsed = JSON.parse(env.GOOGLE_GA4_PROPERTIES);
+      for (const domain of GOOGLE_MONETIZATION_DOMAINS) {
+        const value = String(parsed?.[domain] || '').replace(/^properties\//, '').trim();
+        if (/^\d+$/.test(value)) properties[domain] = value;
+      }
+      if (Object.keys(properties).length === 0) propertyConfigError = 'Add numeric GA4 property IDs in GOOGLE_GA4_PROPERTIES.';
+    } catch {
+      propertyConfigError = 'GOOGLE_GA4_PROPERTIES must be valid JSON keyed by domain.';
+    }
+  }
+  const account = String(env.GOOGLE_ADSENSE_ACCOUNT_ID || '').replace(/^accounts\//, '').trim();
+  return {
+    oauth,
+    account,
+    adsense: oauth && Boolean(account),
+    properties,
+    propertyConfigError,
+  };
+}
+
+function googleSetupResponse(env, days) {
+  const config = googleConfiguration(env);
+  return {
+    configured: config.adsense || Object.keys(config.properties).length > 0,
+    generatedAt: new Date().toISOString(),
+    days,
+    range: googleDateRange(days),
+    message: 'Google reporting is not connected. No advertising revenue or traffic values are available yet.',
+    setup: {
+      title: 'Connect Google to activate reporting',
+      steps: [
+        'Enable the AdSense Management API and Google Analytics Data API in Google Cloud.',
+        'Create a Google OAuth refresh token with adsense.readonly and analytics.readonly scopes.',
+        'Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REFRESH_TOKEN as Cloudflare Worker secrets.',
+        'Set GOOGLE_ADSENSE_ACCOUNT_ID and GOOGLE_GA4_PROPERTIES; map each domain to its numeric GA4 property ID.',
+        'Add and verify each site in AdSense. Registering a property or installing this dashboard does not activate AdSense.',
+      ],
+      secrets: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REFRESH_TOKEN'],
+      variables: ['GOOGLE_ADSENSE_ACCOUNT_ID', 'GOOGLE_GA4_PROPERTIES'],
+    },
+    domains: GOOGLE_MONETIZATION_DOMAINS.map((domain) => ({
+      domain,
+      url: `https://${domain}`,
+      adsense: { connected: false, error: 'AdSense account access is not configured.' },
+      analytics: {
+        connected: false,
+        propertyConfigured: Boolean(config.properties[domain]),
+        error: config.properties[domain] ? 'Google OAuth is not configured.' : 'A GA4 property ID is required for this domain.',
+      },
+    })),
+  };
+}
+
+async function googleAccessToken(env) {
+  const key = `${env.GOOGLE_CLIENT_ID}:${env.GOOGLE_REFRESH_TOKEN}`;
+  if (googleTokenCache.key === key && googleTokenCache.token && googleTokenCache.expiresAt > Date.now() + 60000) {
+    return googleTokenCache.token;
+  }
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: String(env.GOOGLE_CLIENT_ID),
+      client_secret: String(env.GOOGLE_CLIENT_SECRET),
+      refresh_token: String(env.GOOGLE_REFRESH_TOKEN),
+      grant_type: 'refresh_token',
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) {
+    throw new Error(response.status === 400 || response.status === 401
+      ? 'Google OAuth was rejected. Create a refresh token with AdSense and Analytics read-only access.'
+      : `Google OAuth returned HTTP ${response.status}.`);
+  }
+  const data = await response.json();
+  if (!data.access_token) throw new Error('Google OAuth did not return an access token.');
+  googleTokenCache = {
+    key,
+    token: data.access_token,
+    expiresAt: Date.now() + Math.max(60, Number(data.expires_in || 3600)) * 1000,
+  };
+  return data.access_token;
+}
+
+async function googleFetch(url, token, init = {}) {
+  let response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      headers: { ...init.headers, Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch {
+    throw new Error('Google API could not be reached. Retry to refresh the report.');
+  }
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Google authorization expired. Reconnect the Google integration.');
+    if (response.status === 403) throw new Error('Google denied access. Check account permissions, enabled APIs and OAuth scopes.');
+    if (response.status === 404) throw new Error('The requested Google account or property was not found.');
+    if (response.status === 429) throw new Error('Google reporting quota was reached. Retry later.');
+    throw new Error(`Google API returned HTTP ${response.status}.`);
+  }
+  return response.json();
+}
+
+function adsenseCell(row, index) {
+  return Number(row?.cells?.[index]?.value || 0);
+}
+
+function normalizeAdSenseDomain(value) {
+  return String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+}
+
+function parseAdSenseReport(report) {
+  const metrics = {};
+  const headers = report.headers || [];
+  const totalCells = report.totals?.cells || [];
+  for (const metric of ADSENSE_METRICS) {
+    const index = headers.findIndex((header) => header.name === metric);
+    metrics[metric] = index >= 0 ? Number(totalCells[index]?.value || 0) : 0;
+  }
+  const domainIndex = headers.findIndex((header) => header.name === 'DOMAIN_CODE');
+  const domains = {};
+  for (const row of report.rows || []) {
+    const domain = normalizeAdSenseDomain(row.cells?.[domainIndex]?.value);
+    if (!domain) continue;
+    const values = {};
+    for (const metric of ADSENSE_METRICS) {
+      const index = headers.findIndex((header) => header.name === metric);
+      values[metric] = index >= 0 ? adsenseCell(row, index) : 0;
+    }
+    domains[domain] = values;
+  }
+  return { metrics, domains };
+}
+
+async function fetchAdSenseReport(config, token, range) {
+  if (!config.adsense) return { connected: false, metrics: null, domains: {}, error: 'AdSense OAuth and account ID are required.' };
+  try {
+    const query = new URLSearchParams({ dateRange: 'CUSTOM', limit: '50000', currencyCode: 'USD' });
+    query.append('dimensions', 'DOMAIN_CODE');
+    for (const metric of ADSENSE_METRICS) query.append('metrics', metric);
+    for (const [prefix, value] of [['startDate', range.start], ['endDate', range.end]]) {
+      const [year, month, day] = value.split('-').map(Number);
+      query.set(`${prefix}.year`, String(year));
+      query.set(`${prefix}.month`, String(month));
+      query.set(`${prefix}.day`, String(day));
+    }
+    const report = await googleFetch(
+      `https://adsense.googleapis.com/v2/accounts/${encodeURIComponent(config.account)}/reports:generate?${query}`,
+      token,
+    );
+    return { connected: true, ...parseAdSenseReport(report), error: null, warnings: report.warnings || [] };
+  } catch (error) {
+    return { connected: false, metrics: null, domains: {}, error: error instanceof Error ? error.message : 'AdSense report failed.' };
+  }
+}
+
+function ga4MetricValues(row) {
+  return GA4_METRICS.map((_, index) => Number(row?.metricValues?.[index]?.value || 0));
+}
+
+async function fetchGa4Report(propertyId, token, range) {
+  try {
+    const base = {
+      dateRanges: [{ startDate: range.start, endDate: range.end }],
+      keepEmptyRows: false,
+    };
+    const run = (body) => googleFetch(
+      `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
+      token,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...base, ...body }) },
+    );
+    const [summary, pages, sources] = await Promise.all([
+      run({ metrics: GA4_METRICS.map((name) => ({ name })), limit: '1' }),
+      run({
+        dimensions: [{ name: 'pagePath' }],
+        metrics: [{ name: 'screenPageViews' }],
+        orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+        limit: '5',
+      }),
+      run({
+        dimensions: [{ name: 'sessionDefaultChannelGroup' }],
+        metrics: [{ name: 'sessions' }],
+        orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+        limit: '5',
+      }),
+    ]);
+    const values = ga4MetricValues(summary.rows?.[0]);
+    return {
+      connected: true,
+      metrics: { sessions: values[0], users: values[1], pageViews: values[2], engagementRate: values[3] },
+      topPages: (pages.rows || []).map((row) => ({ label: row.dimensionValues?.[0]?.value || '/', value: Number(row.metricValues?.[0]?.value || 0) })),
+      sources: (sources.rows || []).map((row) => ({ label: row.dimensionValues?.[0]?.value || 'Unassigned', value: Number(row.metricValues?.[0]?.value || 0) })),
+      error: null,
+    };
+  } catch (error) {
+    return { connected: false, metrics: null, topPages: [], sources: [], error: error instanceof Error ? error.message : 'GA4 report failed.' };
+  }
+}
+
+async function googleMonetizationReport(env, days) {
+  const config = googleConfiguration(env);
+  if (!config.oauth) return googleSetupResponse(env, days);
+  const range = googleDateRange(days);
+  let token;
+  try {
+    token = await googleAccessToken(env);
+  } catch (error) {
+    const result = googleSetupResponse(env, days);
+    result.message = error instanceof Error ? error.message : 'Google authorization failed.';
+    result.domains = result.domains.map((domain) => ({
+      ...domain,
+      adsense: { connected: false, error: result.message },
+      analytics: { ...domain.analytics, error: result.message },
+    }));
+    return result;
+  }
+  const [adsense, ...analytics] = await Promise.all([
+    fetchAdSenseReport(config, token, range),
+    ...GOOGLE_MONETIZATION_DOMAINS.map((domain) => config.properties[domain]
+      ? fetchGa4Report(config.properties[domain], token, range)
+      : Promise.resolve({ connected: false, metrics: null, topPages: [], sources: [], error: config.propertyConfigError || 'A GA4 property ID is required for this domain.' })),
+  ]);
+  return {
+    configured: true,
+    generatedAt: new Date().toISOString(),
+    days,
+    range,
+    message: adsense.connected || analytics.some((item) => item.connected) ? '' : 'Google is connected but no report could be loaded.',
+    totals: {
+      adsense: adsense.metrics,
+      analytics: analytics.every((item) => item.connected)
+        ? analytics.reduce((totals, item) => ({
+            sessions: totals.sessions + item.metrics.sessions,
+            users: totals.users + item.metrics.users,
+            pageViews: totals.pageViews + item.metrics.pageViews,
+          }), { sessions: 0, users: 0, pageViews: 0 })
+        : null,
+    },
+    domains: GOOGLE_MONETIZATION_DOMAINS.map((domain, index) => ({
+      domain,
+      url: `https://${domain}`,
+      adsense: {
+        connected: adsense.connected,
+        metrics: adsense.connected ? adsense.domains[domain] || Object.fromEntries(ADSENSE_METRICS.map((metric) => [metric, 0])) : null,
+        error: adsense.error,
+      },
+      analytics: { propertyConfigured: Boolean(config.properties[domain]), ...analytics[index] },
+    })),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Router plumbing
 // ---------------------------------------------------------------------------
 
@@ -613,6 +901,29 @@ export default {
         state.serviceInquiries.unshift(inquiry);
         await saveState(env, state);
         return json({ inquiry }, 201);
+      }
+
+      // ---- Google AdSense revenue and GA4 traffic ----
+      if (path === '/api/admin/google-adsense' && method === 'GET') {
+        const requestedDays = Number(url.searchParams.get('days'));
+        const days = [7, 28, 30, 90].includes(requestedDays) ? requestedDays : 28;
+        const refresh = url.searchParams.get('refresh') === '1';
+        const cacheKey = `pb:google-monetization:v1:${days}`;
+        if (!refresh) {
+          try {
+            const cached = await env.PLAYBEAT_KV.get(cacheKey, { type: 'json' });
+            if (cached) return json({ ...cached, cached: true });
+          } catch {
+            // A cache miss or malformed cached value must not block live reporting.
+          }
+        }
+        const report = await googleMonetizationReport(env, days);
+        try {
+          await env.PLAYBEAT_KV.put(cacheKey, JSON.stringify(report), { expirationTtl: 300 });
+        } catch {
+          return json({ ...report, cached: false, cacheWarning: 'Report loaded; temporary cache is unavailable.' });
+        }
+        return json({ ...report, cached: false });
       }
 
       // ---- Admin catalog ----
