@@ -726,6 +726,93 @@ async function googleMonetizationReport(env, days) {
 }
 
 // ---------------------------------------------------------------------------
+// Meta Facebook, Instagram and WhatsApp Business reporting
+// ---------------------------------------------------------------------------
+
+async function metaFetch(path, token, fields = '') {
+  const url = new URL(`https://graph.facebook.com/v24.0${path}`);
+  if (fields) url.searchParams.set('fields', fields);
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch {
+    throw new Error('Meta Graph API could not be reached. Retry to refresh.');
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.error) {
+    if (data.error?.code === 190) throw new Error('Meta access token is invalid or expired.');
+    throw new Error(data.error?.message || `Meta Graph API returned HTTP ${response.status}.`);
+  }
+  return data;
+}
+
+async function metaSocialReport(env) {
+  if (!env.META_ACCESS_TOKEN) {
+    return {
+      configured: false,
+      generatedAt: new Date().toISOString(),
+      facebook: { connected: false, pages: [], error: 'META_ACCESS_TOKEN is not configured.' },
+      instagram: { connected: false, accounts: [], error: 'META_ACCESS_TOKEN is not configured.' },
+      whatsapp: { connected: false, messagingReady: false, accounts: [], error: 'META_ACCESS_TOKEN is not configured.' },
+    };
+  }
+  const token = String(env.META_ACCESS_TOKEN);
+  const [identityResult, pagesResult, whatsappResult] = await Promise.allSettled([
+    metaFetch('/me', token, 'id,name'),
+    metaFetch('/me/accounts', token, 'id,name,link,fan_count,followers_count,instagram_business_account{id,username,name,followers_count,follows_count,media_count}'),
+    metaFetch('/me/assigned_whatsapp_business_accounts', token, 'id,name'),
+  ]);
+  const pages = pagesResult.status === 'fulfilled' ? pagesResult.value.data || [] : [];
+  const pageError = pagesResult.status === 'rejected'
+    ? pagesResult.reason instanceof Error ? pagesResult.reason.message : 'Facebook Page data could not be loaded.'
+    : pages.length === 0 ? 'No Facebook Pages are assigned to this Meta system user.' : null;
+  const instagramAccounts = [];
+  const seenInstagram = new Set();
+  for (const page of pages) {
+    const account = page.instagram_business_account;
+    if (account?.id && !seenInstagram.has(account.id)) {
+      seenInstagram.add(account.id);
+      instagramAccounts.push({ ...account, pageId: page.id, pageName: page.name });
+    }
+  }
+  let whatsappAccounts = [];
+  let whatsappError = whatsappResult.status === 'rejected'
+    ? whatsappResult.reason instanceof Error ? whatsappResult.reason.message : 'WhatsApp Business data could not be loaded.'
+    : null;
+  if (whatsappResult.status === 'fulfilled') {
+    whatsappAccounts = await Promise.all((whatsappResult.value.data || []).map(async (account) => {
+      try {
+        const phones = await metaFetch(`/${account.id}/phone_numbers`, token, 'id,display_phone_number,verified_name,quality_rating,code_verification_status');
+        return { ...account, phoneNumbers: phones.data || [], error: null };
+      } catch (error) {
+        return { ...account, phoneNumbers: [], error: error instanceof Error ? error.message : 'Phone numbers could not be loaded.' };
+      }
+    }));
+    if (whatsappAccounts.length === 0) whatsappError = 'No WhatsApp Business account is assigned to this Meta system user. Assign a WABA and phone number in Meta Business settings.';
+  }
+  return {
+    configured: true,
+    generatedAt: new Date().toISOString(),
+    identity: identityResult.status === 'fulfilled' ? { name: identityResult.value.name } : null,
+    facebook: { connected: pages.length > 0, pages, error: pageError },
+    instagram: {
+      connected: instagramAccounts.length > 0,
+      accounts: instagramAccounts,
+      error: pagesResult.status === 'rejected' ? pageError : instagramAccounts.length === 0 ? 'No Instagram professional account is linked to an assigned Facebook Page.' : null,
+    },
+    whatsapp: {
+      connected: whatsappAccounts.length > 0,
+      messagingReady: whatsappAccounts.some((account) => account.phoneNumbers.length > 0),
+      accounts: whatsappAccounts,
+      error: whatsappError,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Router plumbing
 // ---------------------------------------------------------------------------
 
@@ -956,6 +1043,27 @@ export default {
         state.serviceInquiries.unshift(inquiry);
         await saveState(env, state);
         return json({ inquiry }, 201);
+      }
+
+      // ---- Meta Facebook, Instagram and WhatsApp Business ----
+      if (path === '/api/admin/meta-social' && method === 'GET') {
+        const refresh = url.searchParams.get('refresh') === '1';
+        const cacheKey = 'pb:meta-social:v1';
+        if (!refresh) {
+          try {
+            const cached = await env.PLAYBEAT_KV.get(cacheKey, { type: 'json' });
+            if (cached) return json({ ...cached, cached: true });
+          } catch {
+            // Continue to the live Meta API when cached data is unavailable.
+          }
+        }
+        const report = await metaSocialReport(env);
+        try {
+          await env.PLAYBEAT_KV.put(cacheKey, JSON.stringify(report), { expirationTtl: 300 });
+        } catch {
+          return json({ ...report, cached: false, cacheWarning: 'Meta report loaded; temporary cache is unavailable.' });
+        }
+        return json({ ...report, cached: false });
       }
 
       // ---- Google AdSense revenue and GA4 traffic ----

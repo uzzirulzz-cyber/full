@@ -322,6 +322,58 @@
   justify-content: center;
 }
 
+.celestial-admin .celestial-meta-card {
+  border-top: 3px solid #dce3f3;
+}
+
+.celestial-admin .celestial-meta-facebook { border-top-color: #1877f2; }
+.celestial-admin .celestial-meta-instagram { border-top-color: #c13584; }
+.celestial-admin .celestial-meta-whatsapp { border-top-color: #25d366; }
+
+.celestial-admin .celestial-meta-card .card-body {
+  width: 100%;
+  min-height: 238px;
+}
+
+.celestial-admin .celestial-meta-card .typcn-social-facebook { color: #1877f2; }
+.celestial-admin .celestial-meta-card .typcn-social-instagram { color: #c13584; }
+.celestial-admin .celestial-meta-card .typcn-messages { color: #16a34a; }
+
+.celestial-admin .celestial-meta-value {
+  margin-top: 4px;
+  color: #152036;
+  font-size: 25px;
+  font-weight: 700;
+}
+
+.celestial-admin .celestial-meta-empty {
+  padding: 12px 0;
+  color: #686868;
+  font-size: 12px;
+}
+
+.celestial-admin .celestial-meta-empty > i {
+  display: block;
+  margin-bottom: 10px;
+  color: #ffab00;
+  font-size: 25px;
+}
+
+.celestial-admin .celestial-meta-phone {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border-radius: 6px;
+  background: #f0fdf4;
+}
+
+.celestial-admin .celestial-meta-phone span,
+.celestial-admin .celestial-meta-phone small {
+  color: #686868;
+}
+
 @keyframes celestialSpin {
   to { transform: rotate(360deg); }
 }

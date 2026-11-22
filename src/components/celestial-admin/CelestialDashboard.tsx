@@ -10,6 +10,7 @@ import type {
 } from '../../types/store';
 import type { AdminTab } from '../AdminPanelView';
 import { GoogleMonetizationPanel } from './GoogleMonetizationPanel';
+import { MetaSocialPanel } from './MetaSocialPanel';
 
 interface CelestialDashboardProps {
   digitalProducts: Product[];
@@ -166,6 +167,7 @@ export function CelestialDashboard({
       </div>
 
       <GoogleMonetizationPanel />
+      <MetaSocialPanel />
 
       <div className="row">
         <div className="col-xl-3 d-flex grid-margin stretch-card">
