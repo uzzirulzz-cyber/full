@@ -411,8 +411,21 @@ function googleDateRange(days) {
   return { start: iso(start), end: iso(end) };
 }
 
+function googleServiceAccount(env) {
+  if (!env.GOOGLE_SERVICE_ACCOUNT_JSON) return null;
+  try {
+    const credential = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    if (credential.type === 'service_account' && credential.client_email && credential.private_key) return credential;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function googleConfiguration(env) {
-  const oauth = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REFRESH_TOKEN);
+  const serviceAccount = googleServiceAccount(env);
+  const refreshToken = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REFRESH_TOKEN);
+  const oauth = Boolean(serviceAccount || refreshToken);
   let properties = {};
   let propertyConfigError = '';
   if (env.GOOGLE_GA4_PROPERTIES) {
@@ -449,12 +462,12 @@ function googleSetupResponse(env, days) {
       title: 'Connect Google to activate reporting',
       steps: [
         'Enable the AdSense Management API and Google Analytics Data API in Google Cloud.',
-        'Create a Google OAuth refresh token with adsense.readonly and analytics.readonly scopes.',
-        'Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REFRESH_TOKEN as Cloudflare Worker secrets.',
+        'For GA4, add the service-account email as a Viewer on each property and store GOOGLE_SERVICE_ACCOUNT_JSON as a Cloudflare secret.',
+        'Alternatively, set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REFRESH_TOKEN using a refresh token with adsense.readonly and analytics.readonly scopes.',
         'Set GOOGLE_ADSENSE_ACCOUNT_ID and GOOGLE_GA4_PROPERTIES; map each domain to its numeric GA4 property ID.',
         'Add and verify each site in AdSense. Registering a property or installing this dashboard does not activate AdSense.',
       ],
-      secrets: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REFRESH_TOKEN'],
+      secrets: ['GOOGLE_SERVICE_ACCOUNT_JSON', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REFRESH_TOKEN'],
       variables: ['GOOGLE_ADSENSE_ACCOUNT_ID', 'GOOGLE_GA4_PROPERTIES'],
     },
     domains: GOOGLE_MONETIZATION_DOMAINS.map((domain) => ({
@@ -470,20 +483,58 @@ function googleSetupResponse(env, days) {
   };
 }
 
+function googleBase64Url(value) {
+  const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '');
+}
+
+async function googleServiceAccountAssertion(credential) {
+  const now = Math.floor(Date.now() / 1000);
+  const unsigned = `${googleBase64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${googleBase64Url(JSON.stringify({
+    iss: credential.client_email,
+    scope: 'https://www.googleapis.com/auth/adsense.readonly https://www.googleapis.com/auth/analytics.readonly',
+    aud: credential.token_uri || 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600,
+  }))}`;
+  const pem = credential.private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, '');
+  const der = Uint8Array.from(atob(pem), (character) => character.charCodeAt(0));
+  const key = await crypto.subtle.importKey(
+    'pkcs8',
+    der,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(unsigned));
+  return `${unsigned}.${googleBase64Url(signature)}`;
+}
+
 async function googleAccessToken(env) {
-  const key = `${env.GOOGLE_CLIENT_ID}:${env.GOOGLE_REFRESH_TOKEN}`;
+  const serviceAccount = googleServiceAccount(env);
+  const key = serviceAccount
+    ? `service-account:${serviceAccount.client_email}:${serviceAccount.private_key_id || ''}`
+    : `refresh-token:${env.GOOGLE_CLIENT_ID}:${env.GOOGLE_REFRESH_TOKEN}`;
   if (googleTokenCache.key === key && googleTokenCache.token && googleTokenCache.expiresAt > Date.now() + 60000) {
     return googleTokenCache.token;
   }
-  const response = await fetch('https://oauth2.googleapis.com/token', {
+  const body = serviceAccount
+    ? new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion: await googleServiceAccountAssertion(serviceAccount),
+      })
+    : new URLSearchParams({
+        client_id: String(env.GOOGLE_CLIENT_ID),
+        client_secret: String(env.GOOGLE_CLIENT_SECRET),
+        refresh_token: String(env.GOOGLE_REFRESH_TOKEN),
+        grant_type: 'refresh_token',
+      });
+  const response = await fetch(serviceAccount?.token_uri || 'https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: String(env.GOOGLE_CLIENT_ID),
-      client_secret: String(env.GOOGLE_CLIENT_SECRET),
-      refresh_token: String(env.GOOGLE_REFRESH_TOKEN),
-      grant_type: 'refresh_token',
-    }),
+    body,
     signal: AbortSignal.timeout(15000),
   });
   if (!response.ok) {
@@ -646,7 +697,11 @@ async function googleMonetizationReport(env, days) {
     generatedAt: new Date().toISOString(),
     days,
     range,
-    message: adsense.connected || analytics.some((item) => item.connected) ? '' : 'Google is connected but no report could be loaded.',
+    message: adsense.connected || analytics.some((item) => item.connected)
+      ? ''
+      : config.adsense || Object.keys(config.properties).length > 0
+        ? 'Google authentication succeeded, but no report could be loaded. Check API enablement and account permissions.'
+        : 'Google authentication is configured. Add the AdSense account ID and GA4 property mappings to load reports.',
     totals: {
       adsense: adsense.metrics,
       analytics: analytics.every((item) => item.connected)
@@ -908,7 +963,7 @@ export default {
         const requestedDays = Number(url.searchParams.get('days'));
         const days = [7, 28, 30, 90].includes(requestedDays) ? requestedDays : 28;
         const refresh = url.searchParams.get('refresh') === '1';
-        const cacheKey = `pb:google-monetization:v1:${days}`;
+        const cacheKey = `pb:google-monetization:v2:${days}`;
         if (!refresh) {
           try {
             const cached = await env.PLAYBEAT_KV.get(cacheKey, { type: 'json' });
